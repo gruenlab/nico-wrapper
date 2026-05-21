@@ -1,5 +1,8 @@
 # nico-wrapper
 
+> [!WARNING]
+> This is a vibe-coded proof of concept for a NiCo wrapper. It can change at any moment, may contain bugs, and should not be treated as a stable production interface.
+
 `nico-wrapper` provides small Python APIs and Typer CLIs around the NiCo (`nico-sc-sp`) preprocessing and label-transfer workflow for reference scRNA-seq and spatial/Xenium query data.
 
 The package exposes two tools:
