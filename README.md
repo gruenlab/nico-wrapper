@@ -5,11 +5,12 @@
 
 `nico-wrapper` provides small Python APIs and Typer CLIs around the NiCo (`nico-sc-sp`) preprocessing and label-transfer workflow for reference scRNA-seq and spatial/Xenium query data.
 
-The package exposes three tools:
+The package exposes four tools:
 
 - `nico-preprocess`: convert raw inputs and build NiCo-ready AnnData files.
 - `nico-transfer`: transfer reference labels onto preprocessed spatial/query data.
 - `nico-niche`: run NiCo niche / spatial cell-type interaction analysis after transfer.
+- `nico-covariation`: run NiCo latent-factor covariation analysis after niche interactions.
 
 Most plotting is optional and disabled by default.
 
@@ -30,6 +31,7 @@ Run the CLIs from the repository root with:
 uv run nico-preprocess --help
 uv run nico-transfer --help
 uv run nico-niche --help
+uv run nico-covariation --help
 ```
 
 Equivalent module entry points are also available:
@@ -38,6 +40,7 @@ Equivalent module entry points are also available:
 uv run python -m nico_wrapper.preprocess.cli --help
 uv run python -m nico_wrapper.transfer.cli --help
 uv run python -m nico_wrapper.niche.cli --help
+uv run python -m nico_wrapper.covariation.cli --help
 ```
 
 ## End-to-end workflow
@@ -75,6 +78,12 @@ uv run nico-transfer run \
 # Niche interaction analysis on transferred labels
 uv run nico-niche run \
   --output-dir nico_analysis
+
+# Factor covariation analysis after niche interactions
+uv run nico-covariation run \
+  --output-dir nico_analysis \
+  --ref-dir inputRef \
+  --spatial-dir inputQuery
 ```
 
 ## `nico-preprocess`
@@ -495,6 +504,47 @@ config = NicheInteractionConfig(
 
 result = run_niche_interactions("nico_analysis", config=config)
 ```
+
+## `nico-covariation`
+
+`nico-covariation` wraps NiCo's latent-factor covariation analysis after `nico-niche` has produced neighborhood artifacts.
+
+Default double-modality run:
+
+```bash
+uv run nico-covariation run \
+  --output-dir nico_analysis \
+  --ref-dir inputRef \
+  --spatial-dir inputQuery
+```
+
+For custom reference label keys, pass the same reference label key used during preprocessing/transfer, for example `--ref-label-key CellType`.
+
+Useful commands:
+
+```bash
+uv run nico-covariation validate --output-dir nico_analysis --ref-dir inputRef --spatial-dir inputQuery
+uv run nico-covariation artifacts --output-dir nico_analysis --radius 0 --n-factors 3
+uv run nico-covariation export --output-dir nico_analysis --kind regression
+uv run nico-covariation reports --output-dir nico_analysis --kind regression-circleplots --kind regression-heatmaps
+uv run nico-covariation top-genes --output-dir nico_analysis --cell-type APCs --factor-id 1
+uv run nico-covariation lr --output-dir nico_analysis --central-cell-type APCs --neighbor-cell-type DCs --central-factor-id 1 --neighbor-factor-id 1
+uv run nico-covariation umap --output-dir nico_analysis --modality spatial --cell-type APCs --factor-id 1
+uv run nico-covariation pathway --output-dir nico_analysis --cell-type APCs --factor-id 1  # may require Enrichr/network access
+```
+
+Core outputs:
+
+```text
+<output-dir>/covariations_R0_F3/factors_info.p
+<output-dir>/covariations_R0_F3/Principal_component_feature_matrix.npz
+<output-dir>/covariations_R0_F3/Regression_outputs/
+<output-dir>/covariations_R0_F3/covariation_state.pkl
+<output-dir>/covariations_R0_F3/regression_coefficients.tsv
+<output-dir>/covariations_R0_F3/covariation_manifest.json
+```
+
+Additional focused report commands are available for ligand-receptor plots, top genes, pathway enrichment, UMAP factor plots, feature-matrix plots, and colocalization. Report generation writes `report_manifest.json` when using the `reports` dispatcher. The state pickle can be large because NiCo keeps report inputs in memory. Disable it with `--no-persist-state` if you only need core artifacts and the regression TSV. NiCo's ridge p-values are an upstream OLS-style approximation and are not corrected by the wrapper.
 
 ## Implementation notes
 
