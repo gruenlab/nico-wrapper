@@ -110,6 +110,7 @@ Main options:
 --sep TEXT                 separator for the sparse count table; default: space
 --header INTEGER           header row passed to pandas; default: 1
 --one-based-indices / --zero-based-indices
+                           default: one-based indices
 ```
 
 The output `.h5ad` stores cells in `.obs_names`, genes in `.var_names`, and raw counts in `.X` as a sparse float matrix. The float dtype avoids in-place truncation issues in NiCo's SCTransform implementation.
@@ -136,11 +137,12 @@ Main options:
 --counts PATH                         spatial count CSV
 --coordinates PATH                    coordinate CSV
 --output PATH                         output raw spatial h5ad
---counts-orientation TEXT             genes_by_cells or cells_by_genes
+--counts-orientation TEXT             genes_by_cells or cells_by_genes; default: genes_by_cells
 --barcode-col TEXT                    coordinate barcode column name or index; default: 0
---coordinate-col TEXT                 coordinate column name/index; may be repeated
+--coordinate-col TEXT                 coordinate column name/index; may be repeated; default: all non-barcode columns
 --spatial-key TEXT                    obsm key for coordinates; default: spatial
 --reorder-coordinates / --no-reorder-coordinates
+                                      default: reorder coordinates
 ```
 
 ### `build`
@@ -182,6 +184,22 @@ Required spatial input:
 - raw counts in `.X`, unless a normalization strategy uses a layer
 - coordinates in `.obsm["spatial"]` by default
 
+Main build options and defaults:
+
+```text
+--spatial-key TEXT                    default: spatial
+--ref-label-key TEXT                  default: cluster
+--min-cell-counts INTEGER             default: 5
+--min-gene-cells INTEGER              default: 1
+--gene-space TEXT                     shared or reference_all; default: shared
+--spatial-n-pcs INTEGER               default: 30
+--leiden-resolution FLOAT             may be repeated; default: 0.4 and 0.5
+--make-reference-umap / --no-make-reference-umap
+                                      default: make reference UMAP
+--random-state INTEGER                default: 0
+--overwrite / --no-overwrite          default: no overwrite
+```
+
 Outputs:
 
 ```text
@@ -215,10 +233,11 @@ NiCo SCTransform-specific options:
 Pearson residual-specific options:
 
 ```text
---pearson-theta FLOAT
---pearson-clip FLOAT
+--pearson-theta FLOAT       overdispersion theta; default: 100
+--pearson-clip FLOAT        clipping threshold; default: Scanpy default sqrt(n_obs)
 --pearson-check-values / --no-pearson-check-values
---pearson-layer TEXT
+                            validate count values; default: check values
+--pearson-layer TEXT        layer to normalize instead of .X; default: .X
 ```
 
 By default, build uses `--gene-space shared`, which subsets both modalities to shared genes before normalization. `--gene-space reference_all` preserves all reference genes while still aligning spatial data to shared genes.
@@ -281,7 +300,7 @@ Core inputs:
 --ref-dir PATH             Directory with Original_counts.h5ad and sct_singleCell.h5ad
 --spatial-dir PATH         Directory with sct_spatial.h5ad
 --output-dir PATH          Directory for NiCo transfer outputs
---annotation-dir PATH      Optional annotation/intermediate directory
+--annotation-dir PATH      Optional annotation/intermediate directory; default: output-dir/annotations
 ```
 
 Label-transfer behavior:
@@ -310,8 +329,8 @@ File-name overrides:
 Operational flags:
 
 ```text
---overwrite / --no-overwrite
---cleanup-intermediate / --keep-intermediate
+--overwrite / --no-overwrite                  default: no overwrite
+--cleanup-intermediate / --keep-intermediate  default: keep intermediates
 ```
 
 Defaults follow NiCo where practical. In particular, the default spatial guide cluster key is `leiden0.5`, and intermediates are kept by default.
