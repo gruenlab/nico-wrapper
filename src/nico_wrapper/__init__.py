@@ -1,1 +1,1 @@
-"""Wrapper utilities for NiCo preprocessing and label transfer."""
+"""Wrapper utilities for NiCo preprocessing, label transfer, and niche analysis."""

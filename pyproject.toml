@@ -35,6 +35,7 @@ dependencies = [
 [project.scripts]
 nico-preprocess = "nico_wrapper.preprocess.cli:app"
 nico-transfer = "nico_wrapper.transfer.cli:app"
+nico-niche = "nico_wrapper.niche.cli:app"
 
 
 [build-system]

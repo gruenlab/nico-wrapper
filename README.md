@@ -5,12 +5,13 @@
 
 `nico-wrapper` provides small Python APIs and Typer CLIs around the NiCo (`nico-sc-sp`) preprocessing and label-transfer workflow for reference scRNA-seq and spatial/Xenium query data.
 
-The package exposes two tools:
+The package exposes three tools:
 
 - `nico-preprocess`: convert raw inputs and build NiCo-ready AnnData files.
 - `nico-transfer`: transfer reference labels onto preprocessed spatial/query data.
+- `nico-niche`: run NiCo niche / spatial cell-type interaction analysis after transfer.
 
-Plotting is intentionally out of scope for now.
+Most plotting is optional and disabled by default.
 
 ## Installation
 
@@ -28,6 +29,7 @@ Run the CLIs from the repository root with:
 ```bash
 uv run nico-preprocess --help
 uv run nico-transfer --help
+uv run nico-niche --help
 ```
 
 Equivalent module entry points are also available:
@@ -35,6 +37,7 @@ Equivalent module entry points are also available:
 ```bash
 uv run python -m nico_wrapper.preprocess.cli --help
 uv run python -m nico_wrapper.transfer.cli --help
+uv run python -m nico_wrapper.niche.cli --help
 ```
 
 ## End-to-end workflow
@@ -67,6 +70,10 @@ uv run nico-preprocess build \
 uv run nico-transfer run \
   --ref-dir inputRef \
   --spatial-dir inputQuery \
+  --output-dir nico_analysis
+
+# Niche interaction analysis on transferred labels
+uv run nico-niche run \
   --output-dir nico_analysis
 ```
 
@@ -396,6 +403,97 @@ Lower-level APIs are also exported:
 
 ```python
 from nico_wrapper.transfer import find_anchors, transfer_labels, save_transfer_result
+```
+
+## `nico-niche`
+
+`nico-niche` wraps NiCo's spatial neighborhood / niche interaction analysis after label transfer.
+
+It expects an annotated spatial AnnData under the transfer output directory:
+
+```text
+<output-dir>/nico_celltype_annotation.h5ad
+```
+
+with transferred labels in `.obs["nico_ct"]` and spatial coordinates in `.obsm["spatial"]` by default.
+
+Run the default Delaunay-neighborhood analysis with:
+
+```bash
+uv run nico-niche run \
+  --output-dir nico_analysis
+```
+
+A more explicit example:
+
+```bash
+uv run nico-niche run \
+  --output-dir nico_analysis \
+  --anndata-filename nico_celltype_annotation.h5ad \
+  --label-key nico_ct \
+  --spatial-key spatial \
+  --radius 0 \
+  --epsilon-threshold 100 \
+  --k-fold 5 \
+  --n-repeats 1 \
+  --seed 36851234 \
+  --n-jobs -1
+```
+
+`--radius 0` uses NiCo's Delaunay-neighborhood mode. Positive radius values use fixed-radius neighborhoods.
+
+Useful supporting commands:
+
+```bash
+uv run nico-niche validate --output-dir nico_analysis
+uv run nico-niche artifacts --output-dir nico_analysis --radius 0
+uv run nico-niche export --output-dir nico_analysis --radius 0
+```
+
+Core outputs for downstream covariation are:
+
+```text
+<output-dir>/used_CT.txt
+<output-dir>/used_Clusters0.csv
+<output-dir>/neighbors_0.p
+<output-dir>/distances_0.p
+<output-dir>/niche_prediction_linear/classifier_matrices_0.npz
+```
+
+The wrapper also writes easier-to-consume sidecars when available:
+
+```text
+<output-dir>/niche_prediction_linear/niche_manifest_0.json
+<output-dir>/niche_prediction_linear/metrics_0.tsv
+<output-dir>/niche_prediction_linear/interactions_0.tsv
+```
+
+### Niche Python API
+
+```python
+from nico_wrapper.niche import run_niche_interactions
+
+result = run_niche_interactions(output_dir="nico_analysis")
+print(result.classifier_matrices_npz)
+print(result.covariation_ready)
+```
+
+For custom settings:
+
+```python
+from nico_wrapper.niche import (
+    InteractionModelConfig,
+    NeighborhoodConfig,
+    NicheInteractionConfig,
+    run_niche_interactions,
+)
+
+config = NicheInteractionConfig(
+    neighborhood=NeighborhoodConfig(radius=0, epsilon_threshold=100),
+    model=InteractionModelConfig(k_fold=5, n_repeats=1),
+)
+
+result = run_niche_interactions("nico_analysis", config=config)
 ```
 
 ## Implementation notes
