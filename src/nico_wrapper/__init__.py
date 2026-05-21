@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from nico-wrapper!")
+"""Wrapper utilities for NiCo preprocessing and label transfer."""
