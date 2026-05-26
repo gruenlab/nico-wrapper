@@ -1,7 +1,7 @@
 [project]
 name = "nico-wrapper"
 version = "0.1.0"
-description = "Add your description here"
+description = "A thin wrapper around NiCo adding an easy to use public API and command line tools to execute the NiCo pipeline."
 readme = "README.md"
 authors = [
     { name = "Alexander Dallmann", email = "alexander.dallmann@uni-wuerzburg.de" }
