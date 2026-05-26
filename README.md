@@ -1,3 +1,4 @@
+This is a test commit
 # nico-wrapper
 
 > [!WARNING]
