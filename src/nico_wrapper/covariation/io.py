@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from datetime import datetime, timezone
 import importlib.metadata
 import json
-from pathlib import Path
 import pickle
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -46,7 +46,9 @@ def planned_covariation_paths(
     )
 
 
-def required_covariation_output_paths(paths: CovariationArtifactPaths) -> tuple[Path, ...]:
+def required_covariation_output_paths(
+    paths: CovariationArtifactPaths,
+) -> tuple[Path, ...]:
     """Return core files that prove upstream covariation completed."""
 
     return (paths.factors_pickle, paths.feature_matrix_npz)
@@ -64,13 +66,17 @@ def resolve_ligand_receptor_db(path: str | Path | None = None) -> Path:
     if path is not None:
         resolved = Path(path)
         if not resolved.exists() or not resolved.is_file():
-            raise FileNotFoundError(f"Ligand-receptor DB does not exist or is not a file: {resolved}")
+            raise FileNotFoundError(
+                f"Ligand-receptor DB does not exist or is not a file: {resolved}"
+            )
         return resolved
 
     try:
         import nico
     except ImportError as exc:  # pragma: no cover - environment-specific
-        raise FileNotFoundError("Could not import nico to locate bundled NiCoLRdb.txt.") from exc
+        raise FileNotFoundError(
+            "Could not import nico to locate bundled NiCoLRdb.txt."
+        ) from exc
 
     package_path = Path(nico.__file__).parent
     candidates = [
@@ -79,18 +85,13 @@ def resolve_ligand_receptor_db(path: str | Path | None = None) -> Path:
         Path.cwd() / "NiCoLRdb.txt",
         Path.cwd() / "utils" / "NiCoLRdb.txt",
     ]
-    for parent in Path.cwd().resolve().parents:
-        candidates.extend(
-            [
-                parent / "NiCoLRdb.txt",
-                parent / "nico_tutorial" / "NiCoLRdb.txt",
-                parent / "nico_tutorial" / "NiCo" / "utils" / "NiCoLRdb.txt",
-            ]
-        )
+
     for candidate in candidates:
         if candidate.exists() and candidate.is_file():
             return candidate
-    raise FileNotFoundError("Could not locate NiCoLRdb.txt; pass ligand_receptor_db explicitly.")
+    raise FileNotFoundError(
+        "Could not locate NiCoLRdb.txt; pass ligand_receptor_db explicitly."
+    )
 
 
 def write_covariation_state(nico_result: Any, output_path: str | Path) -> Path:
@@ -136,14 +137,18 @@ def write_covariation_manifest(
             "feature_matrix_npz": str(result.feature_matrix_npz),
             "regression_dir": str(result.regression_dir),
             "state_pickle": str(result.state_pickle) if result.state_pickle else None,
-            "regression_tsv": str(result.regression_tsv) if result.regression_tsv else None,
+            "regression_tsv": str(result.regression_tsv)
+            if result.regression_tsv
+            else None,
             "manifest_json": str(path),
         },
         "niche": _niche_manifest_payload(result),
         "cell_type_names": result.cell_type_names,
         "config": asdict(config),
     }
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8"
+    )
     return path
 
 
@@ -159,7 +164,9 @@ def load_factors_info(path: str | Path) -> tuple[Any, Any, Any]:
     with Path(path).open("rb") as handle:
         value = pickle.load(handle)
     if not isinstance(value, tuple) or len(value) != 3:
-        raise ValueError(f"Expected factors_info.p to contain a 3-tuple; found {type(value).__name__}.")
+        raise ValueError(
+            f"Expected factors_info.p to contain a 3-tuple; found {type(value).__name__}."
+        )
     return value
 
 
@@ -168,7 +175,9 @@ def load_feature_matrix(path: str | Path) -> np.ndarray:
 
     data = np.load(path, allow_pickle=True)
     if FEATURE_MATRIX_KEY not in data:
-        raise ValueError(f"Feature matrix is missing key {FEATURE_MATRIX_KEY!r}: {path}")
+        raise ValueError(
+            f"Feature matrix is missing key {FEATURE_MATRIX_KEY!r}: {path}"
+        )
     return np.asarray(data[FEATURE_MATRIX_KEY])
 
 
