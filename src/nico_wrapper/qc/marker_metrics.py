@@ -1,4 +1,18 @@
-"""Marker-based annotation quality-control metric APIs."""
+"""Marker-based annotation quality-control metric APIs.
+
+Expression-source contract
+--------------------------
+The marker QC APIs that operate on expression values expect the selected
+non-raw expression source (``adata.X`` by default, or ``adata.layers[layer]``
+when ``layer`` is provided) to contain normalized/transformed expression values,
+not raw counts. If raw counts should be used explicitly, store them in
+``adata.raw`` and call functions with ``use_raw=True`` where supported.
+
+A conservative runtime safeguard rejects selected non-raw matrices that look
+like raw count matrices, so users do not accidentally compute marker QC values
+from raw counts in ``.X``. The safeguard is heuristic because AnnData does not
+store a universal "normalized" flag.
+"""
 
 from __future__ import annotations
 
@@ -40,7 +54,9 @@ def _validate_label_key(adata: AnnData, label_key: str) -> pd.Series:
 
 def _selected_labels(markers: MarkerSets, labels: Sequence[str] | None) -> list[str]:
     selected = list(markers.keys()) if labels is None else list(labels)
-    duplicates = [label for label in dict.fromkeys(selected) if selected.count(label) > 1]
+    duplicates = [
+        label for label in dict.fromkeys(selected) if selected.count(label) > 1
+    ]
     if duplicates:
         raise ValueError(f"labels contains duplicate entries: {duplicates!r}")
 
@@ -50,7 +66,9 @@ def _selected_labels(markers: MarkerSets, labels: Sequence[str] | None) -> list[
     return selected
 
 
-def _count_cells_by_label(obs_labels: pd.Series, labels: Sequence[str]) -> dict[str, int]:
+def _count_cells_by_label(
+    obs_labels: pd.Series, labels: Sequence[str]
+) -> dict[str, int]:
     return {label: int((obs_labels == label).sum()) for label in labels}
 
 
@@ -93,6 +111,78 @@ def _get_matrix_var_names_and_var(
     if layer is not None:
         return adata.layers[layer], pd.Index(adata.var_names), adata.var
     return adata.X, pd.Index(adata.var_names), adata.var
+
+
+def _expression_source_name(layer: str | None) -> str:
+    return "adata.X" if layer is None else f"adata.layers[{layer!r}]"
+
+
+def _is_integer_like(values: np.ndarray, *, atol: float = 1e-8) -> bool:
+    return bool(np.all(np.isclose(values, np.rint(values), rtol=0.0, atol=atol)))
+
+
+def _row_sums(matrix) -> np.ndarray:
+    sums = matrix.sum(axis=1)
+    if sparse.issparse(sums):
+        sums = sums.A
+    return np.asarray(sums, dtype=float).ravel()
+
+
+def _looks_like_raw_counts(matrix) -> bool:
+    """Return True for non-negative integer-like matrices with raw-count scale."""
+    data = matrix.data if sparse.issparse(matrix) else np.asarray(matrix)
+    if data.size == 0:
+        return False
+    if not np.issubdtype(data.dtype, np.number):
+        return False
+    if not np.isfinite(data).all():
+        return False
+    if (data < 0).any():
+        return False
+    if not _is_integer_like(np.asarray(data)):
+        return False
+
+    cell_sums = _row_sums(matrix)
+    nonzero_cell_sums = cell_sums[cell_sums > 0]
+    if nonzero_cell_sums.size == 0:
+        return False
+
+    max_value = float(np.max(data))
+    median_cell_sum = float(np.median(nonzero_cell_sums))
+    max_cell_sum = float(np.max(nonzero_cell_sums))
+    return max_value > 20 or median_cell_sum > 100 or max_cell_sum > 1000
+
+
+def _validate_normalized_expression_source(
+    adata: AnnData,
+    *,
+    layer: str | None,
+    use_raw: bool,
+) -> None:
+    """Reject selected non-raw expression sources that appear to be raw counts."""
+    _validate_expression_source(adata, layer, use_raw)
+    if use_raw:
+        return
+
+    matrix = adata.X if layer is None else adata.layers[layer]
+    source = _expression_source_name(layer)
+    data = matrix.data if sparse.issparse(matrix) else np.asarray(matrix)
+    if data.size == 0:
+        return
+    if not np.issubdtype(data.dtype, np.number):
+        raise ValueError(
+            f"{source} must contain numeric expression values; found dtype {data.dtype}."
+        )
+    if not np.isfinite(data).all():
+        raise ValueError(f"{source} contains NaN or infinite values.")
+    if _looks_like_raw_counts(matrix):
+        raise ValueError(
+            f"{source} appears to contain raw counts. Marker QC metrics expect "
+            "normalized/transformed expression values in the selected non-raw "
+            "expression source. Normalize this matrix first, or store raw "
+            "counts in adata.raw and call with use_raw=True if raw-count-based "
+            "metrics are intended."
+        )
 
 
 def _effective_scanpy_use_raw(
@@ -257,7 +347,9 @@ def _make_unique_index_strings(index: pd.Index, *, join: str = "-") -> pd.Index:
 # Numeric helpers
 
 
-def _column_means(matrix, row_mask: np.ndarray, col_indices: Sequence[int]) -> np.ndarray:
+def _column_means(
+    matrix, row_mask: np.ndarray, col_indices: Sequence[int]
+) -> np.ndarray:
     if len(col_indices) == 0:
         return np.asarray([], dtype=float)
 
@@ -358,11 +450,7 @@ def _marker_logfc_metrics_from_resolved(
         rest_means = np.full(n_markers_used, np.nan, dtype=float)
         marker_logfc = np.full(n_markers_used, np.nan, dtype=float)
 
-        evaluable = (
-            n_cells >= min_cells
-            and n_rest_cells > 0
-            and n_markers_used > 0
-        )
+        evaluable = n_cells >= min_cells and n_rest_cells > 0 and n_markers_used > 0
         if evaluable:
             means = _column_means(matrix, target_mask, marker_set.used_indices)
             rest_means = _column_means(matrix, rest_mask, marker_set.used_indices)
@@ -399,7 +487,9 @@ def _marker_logfc_metrics_from_resolved(
                         "cell_type": label,
                         "marker": marker,
                         "var_name": var_name,
-                        "mean_expression": float(mean) if not np.isnan(mean) else np.nan,
+                        "mean_expression": float(mean)
+                        if not np.isnan(mean)
+                        else np.nan,
                         "rest_mean_expression": (
                             float(rest_mean) if not np.isnan(rest_mean) else np.nan
                         ),
@@ -444,11 +534,17 @@ def _compute_marker_scores(
     random_state: int | None,
     score_prefix: str,
     copy_scores_to_obs: bool,
+    validate_normalized: bool = True,
 ) -> pd.DataFrame:
     import scanpy as sc
 
-    _validate_expression_source(adata, layer, use_raw)
-    _, var_names, var = _get_matrix_var_names_and_var(adata, layer=layer, use_raw=use_raw)
+    if validate_normalized:
+        _validate_normalized_expression_source(adata, layer=layer, use_raw=use_raw)
+    else:
+        _validate_expression_source(adata, layer, use_raw)
+    _, var_names, var = _get_matrix_var_names_and_var(
+        adata, layer=layer, use_raw=use_raw
+    )
     resolved = _resolve_marker_sets(markers, labels, var_names, var, gene_symbols_key)
     lookup = _build_gene_lookup(var_names, var, gene_symbols_key)
     resolved_gene_pool_indices: list[int] | None = None
@@ -492,7 +588,9 @@ def _compute_marker_scores(
             if copy_scores_to_obs:
                 adata.obs[score_name] = score_values
         else:
-            gene_list = [str(score_var_names[index]) for index in marker_set.used_indices]
+            gene_list = [
+                str(score_var_names[index]) for index in marker_set.used_indices
+            ]
             try:
                 sc.tl.score_genes(
                     work_adata,
@@ -645,7 +743,9 @@ def _marker_de_recovery_metrics_from_resolved(
     if top_n < 1:
         raise ValueError("top_n must be at least 1.")
     if rank_by not in {"scores", "logfoldchanges", "pvals_adj"}:
-        raise ValueError("rank_by must be one of 'scores', 'logfoldchanges', or 'pvals_adj'.")
+        raise ValueError(
+            "rank_by must be one of 'scores', 'logfoldchanges', or 'pvals_adj'."
+        )
 
     counts = _count_cells_by_label(obs_labels, labels)
     recall_column = _topn_recall_column(top_n)
@@ -688,7 +788,9 @@ def _marker_de_recovery_metrics_from_resolved(
             layer=de_layer,
             copy=False,
         )
-        de_df = _extract_rank_genes_groups_df(work_adata, present_selected_labels, key_added)
+        de_df = _extract_rank_genes_groups_df(
+            work_adata, present_selected_labels, key_added
+        )
         de_df = de_df.reset_index(drop=True)
         de_df["rank"] = de_df.groupby("cell_type", sort=False).cumcount() + 1
 
@@ -709,8 +811,10 @@ def _marker_de_recovery_metrics_from_resolved(
             for cell_type, name in zip(de_df["cell_type"], de_df["names"], strict=False)
         ]
         de_df["is_significant_upregulated"] = (
-            (pd.to_numeric(de_df.get("pvals_adj"), errors="coerce") < alpha)
-            & (pd.to_numeric(de_df.get("logfoldchanges"), errors="coerce") > logfc_threshold)
+            pd.to_numeric(de_df.get("pvals_adj"), errors="coerce") < alpha
+        ) & (
+            pd.to_numeric(de_df.get("logfoldchanges"), errors="coerce")
+            > logfc_threshold
         )
 
     summary_rows: list[dict[str, object]] = []
@@ -725,7 +829,9 @@ def _marker_de_recovery_metrics_from_resolved(
         else:
             markers_used = set(marker_set.used_var_names)
             significant_genes = set(
-                group_de.loc[group_de["is_significant_upregulated"], "names"].astype(str)
+                group_de.loc[group_de["is_significant_upregulated"], "names"].astype(
+                    str
+                )
             )
             fraction_significant = _safe_fraction(
                 len(markers_used.intersection(significant_genes)),
@@ -740,7 +846,9 @@ def _marker_de_recovery_metrics_from_resolved(
                 kind="mergesort",
             )
             top_genes = set(sorted_group.head(top_n)["names"].astype(str))
-            topn_recall = _safe_fraction(len(markers_used.intersection(top_genes)), n_markers_used)
+            topn_recall = _safe_fraction(
+                len(markers_used.intersection(top_genes)), n_markers_used
+            )
 
         summary_rows.append(
             {
@@ -816,7 +924,9 @@ def marker_set_summary(
     """
     obs_labels = _validate_label_key(adata, label_key)
     selected = _selected_labels(markers, labels)
-    _, var_names, var = _get_matrix_var_names_and_var(adata, layer=layer, use_raw=use_raw)
+    _, var_names, var = _get_matrix_var_names_and_var(
+        adata, layer=layer, use_raw=use_raw
+    )
     resolved = _resolve_marker_sets(markers, selected, var_names, var, gene_symbols_key)
     return _marker_set_summary_from_resolved(selected, obs_labels, resolved)
 
@@ -841,6 +951,11 @@ def marker_logfc_metrics(
     cells annotated as that type and all remaining cells. Summarizes marker
     enrichment as mean marker logFC and fraction of markers above a configurable
     logFC threshold.
+
+    Expression values are expected to come from normalized/transformed data in
+    ``adata.X`` or the selected ``layer``. Raw-count-like non-raw matrices are
+    rejected; store raw counts in ``adata.raw`` and pass ``use_raw=True`` if raw
+    values are intended.
 
     Parameters
     ----------
@@ -904,7 +1019,10 @@ def marker_logfc_metrics(
     """
     obs_labels = _validate_label_key(adata, label_key)
     selected = _selected_labels(markers, labels)
-    matrix, var_names, var = _get_matrix_var_names_and_var(adata, layer=layer, use_raw=use_raw)
+    _validate_normalized_expression_source(adata, layer=layer, use_raw=use_raw)
+    matrix, var_names, var = _get_matrix_var_names_and_var(
+        adata, layer=layer, use_raw=use_raw
+    )
     resolved = _resolve_marker_sets(markers, selected, var_names, var, gene_symbols_key)
     return _marker_logfc_metrics_from_resolved(
         matrix,
@@ -937,6 +1055,11 @@ def marker_set_scores(
 
     Intended to use Scanpy's ``score_genes`` and return a cell-by-cell-type
     score matrix where rows are cells and columns are marker-set labels.
+
+    Expression values are expected to come from normalized/transformed data in
+    ``adata.X`` or the selected ``layer``. Raw-count-like non-raw matrices are
+    rejected; store raw counts in ``adata.raw`` and pass ``use_raw=True`` if raw
+    values are intended.
 
     Parameters
     ----------
@@ -1014,6 +1137,11 @@ def marker_score_metrics(
     cell type, reports the fraction of cells whose assigned annotation is the
     top-scoring marker set and the median score margin against the best
     alternative marker set.
+
+    Expression values are expected to come from normalized/transformed data in
+    ``adata.X`` or the selected ``layer``. Raw-count-like non-raw matrices are
+    rejected; store raw counts in ``adata.raw`` and pass ``use_raw=True`` if raw
+    values are intended.
 
     Parameters
     ----------
@@ -1114,6 +1242,12 @@ def marker_de_recovery_metrics(
     of provided markers recovered as significant upregulated DE genes and the
     recall of markers among the top N ranked DE genes.
 
+    Expression values are expected to come from normalized/transformed data in
+    ``adata.X`` or the selected ``layer``. Raw-count-like non-raw matrices are
+    rejected; store raw counts in ``adata.raw`` and pass ``use_raw=True`` if raw
+    values are intended. With ``use_raw=None``, Scanpy's default is followed:
+    ``adata.raw`` is used when present.
+
     Parameters
     ----------
     adata
@@ -1191,7 +1325,12 @@ def marker_de_recovery_metrics(
     obs_labels = _validate_label_key(adata, label_key)
     selected = _selected_labels(markers, labels)
     effective_use_raw = _effective_scanpy_use_raw(adata, layer=layer, use_raw=use_raw)
-    var_names, var = _de_var_namespace(adata, layer=layer, effective_use_raw=effective_use_raw)
+    _validate_normalized_expression_source(
+        adata, layer=layer, use_raw=effective_use_raw
+    )
+    var_names, var = _de_var_namespace(
+        adata, layer=layer, effective_use_raw=effective_use_raw
+    )
     resolved = _resolve_marker_sets(markers, selected, var_names, var, gene_symbols_key)
     return _marker_de_recovery_metrics_from_resolved(
         adata,
@@ -1239,6 +1378,11 @@ def marker_annotation_qc(
 
     Combines marker logFC enrichment, marker-set score agreement, and
     one-vs-rest DE marker recovery into one compact per-cell-type table.
+
+    Expression values are expected to come from normalized/transformed data in
+    ``adata.X`` or the selected ``layer``. Raw-count-like non-raw matrices are
+    rejected; store raw counts in ``adata.raw`` and pass ``use_raw=True`` if raw
+    values are intended.
 
     Parameters
     ----------
@@ -1312,7 +1456,10 @@ def marker_annotation_qc(
     """
     obs_labels = _validate_label_key(adata, label_key)
     selected = _selected_labels(markers, labels)
-    matrix, var_names, var = _get_matrix_var_names_and_var(adata, layer=layer, use_raw=use_raw)
+    _validate_normalized_expression_source(adata, layer=layer, use_raw=use_raw)
+    matrix, var_names, var = _get_matrix_var_names_and_var(
+        adata, layer=layer, use_raw=use_raw
+    )
     resolved = _resolve_marker_sets(markers, selected, var_names, var, gene_symbols_key)
 
     summary = _marker_set_summary_from_resolved(selected, obs_labels, resolved).drop(
@@ -1341,6 +1488,7 @@ def marker_annotation_qc(
         random_state=score_random_state,
         score_prefix="__marker_qc_score__",
         copy_scores_to_obs=False,
+        validate_normalized=False,
     )
     score_metrics = _marker_score_metrics_from_scores(
         scores,
@@ -1358,7 +1506,9 @@ def marker_annotation_qc(
     de_resolved = (
         resolved
         if de_var_names.equals(var_names)
-        else _resolve_marker_sets(markers, selected, de_var_names, de_var, gene_symbols_key)
+        else _resolve_marker_sets(
+            markers, selected, de_var_names, de_var, gene_symbols_key
+        )
     )
     de_metrics = _marker_de_recovery_metrics_from_resolved(
         adata,

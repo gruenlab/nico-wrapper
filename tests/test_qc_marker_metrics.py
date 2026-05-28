@@ -59,7 +59,9 @@ class MarkerMetricTests(unittest.TestCase):
         self.assertGreater(logfc.loc[1, "mean_marker_logFC"], 0)
         self.assertTrue(np.isnan(logfc.loc[2, "mean_marker_logFC"]))
         self.assertEqual(per_marker["cell_type"].tolist(), ["A", "B", "B", "C"])
-        self.assertTrue(per_marker.loc[per_marker["cell_type"] == "C", "marker_logFC"].isna().all())
+        self.assertTrue(
+            per_marker.loc[per_marker["cell_type"] == "C", "marker_logFC"].isna().all()
+        )
 
     def test_sparse_logfc_matches_dense(self) -> None:
         markers = {"A": ["g1", "g2"], "B": ["g3", "g4"]}
@@ -69,6 +71,71 @@ class MarkerMetricTests(unittest.TestCase):
             dense["mean_marker_logFC"].to_numpy(),
             sparse_result["mean_marker_logFC"].to_numpy(),
         )
+
+    def test_raw_count_like_x_is_rejected_unless_raw_is_selected(self) -> None:
+        raw = np.array(
+            [
+                [500, 400, 0, 0],
+                [600, 500, 0, 0],
+                [0, 0, 700, 600],
+                [0, 0, 800, 700],
+            ],
+            dtype=float,
+        )
+        adata = AnnData(
+            raw,
+            obs=pd.DataFrame({"cell_type": ["A", "A", "B", "B"]}),
+            var=pd.DataFrame(index=["g1", "g2", "g3", "g4"]),
+        )
+        markers = {"A": ["g1", "g2"], "B": ["g3", "g4"]}
+
+        with self.assertRaisesRegex(
+            ValueError, "adata.X appears to contain raw counts"
+        ):
+            marker_logfc_metrics(adata, markers)
+
+        normalized = adata.copy()
+        normalized.X = np.log1p(raw)
+        result = marker_logfc_metrics(normalized, markers)
+        self.assertEqual(result["n_markers_used"].tolist(), [2, 2])
+
+        raw_selected = normalized.copy()
+        raw_selected.raw = AnnData(
+            raw,
+            obs=raw_selected.obs.copy(),
+            var=raw_selected.var.copy(),
+        )
+        raw_result = marker_logfc_metrics(raw_selected, markers, use_raw=True)
+        self.assertEqual(raw_result["n_markers_used"].tolist(), [2, 2])
+
+    def test_raw_count_like_layer_is_rejected_for_scores(self) -> None:
+        import scanpy as sc
+
+        original_score_genes = sc.tl.score_genes
+
+        def fake_score_genes(adata, gene_list, *, score_name, **kwargs):
+            adata.obs[score_name] = np.zeros(adata.n_obs)
+
+        sc.tl.score_genes = fake_score_genes
+        try:
+            adata = self._adata()
+            adata.layers["counts"] = np.array(
+                [
+                    [500, 400, 0, 0, 100, 100],
+                    [600, 500, 0, 0, 100, 100],
+                    [500, 400, 0, 0, 100, 100],
+                    [0, 0, 700, 600, 100, 100],
+                    [0, 0, 800, 700, 100, 100],
+                    [0, 0, 700, 600, 100, 100],
+                ],
+                dtype=float,
+            )
+            with self.assertRaisesRegex(
+                ValueError, "adata.layers\\['counts'\\] appears to contain raw counts"
+            ):
+                marker_set_scores(adata, {"A": ["g1"], "B": ["g3"]}, layer="counts")
+        finally:
+            sc.tl.score_genes = original_score_genes
 
     def test_plain_string_marker_set_is_rejected(self) -> None:
         adata = self._adata()
@@ -108,7 +175,9 @@ class MarkerMetricTests(unittest.TestCase):
             markers = {"A": ["g1"], "B": ["g3"]}
             scores = marker_set_scores(adata, markers)
             self.assertEqual(scores.columns.tolist(), ["A", "B"])
-            self.assertFalse(any(column.startswith("marker_score__") for column in adata.obs))
+            self.assertFalse(
+                any(column.startswith("marker_score__") for column in adata.obs)
+            )
 
             marker_set_scores(adata, markers, copy_scores_to_obs=True)
             self.assertIn("marker_score__A", adata.obs)
