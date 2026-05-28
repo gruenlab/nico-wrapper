@@ -1,19 +1,766 @@
-"""Marker-based annotation quality-control metric APIs.
-
-This module intentionally contains public method stubs only. Implementations will
-be added after the API is finalized.
-"""
+"""Marker-based annotation quality-control metric APIs."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Literal
 
 from anndata import AnnData
+import numpy as np
 import pandas as pd
+from scipy import sparse
 
 MarkerSets = Mapping[str, Sequence[str]]
 
+
+@dataclass(frozen=True)
+class ResolvedMarkerSet:
+    """Marker-set resolution against one AnnData variable namespace."""
+
+    provided: list[str]
+    used_input_names: list[str]
+    used_var_names: list[str]
+    used_indices: list[int]
+    missing: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Validation and label helpers
+
+
+def _validate_label_key(adata: AnnData, label_key: str) -> pd.Series:
+    if label_key not in adata.obs:
+        raise KeyError(
+            f"Annotation label key {label_key!r} is not present in adata.obs. "
+            f"Available columns include: {list(adata.obs.columns[:10])!r}"
+        )
+    return adata.obs[label_key]
+
+
+def _selected_labels(markers: MarkerSets, labels: Sequence[str] | None) -> list[str]:
+    selected = list(markers.keys()) if labels is None else list(labels)
+    duplicates = [label for label in dict.fromkeys(selected) if selected.count(label) > 1]
+    if duplicates:
+        raise ValueError(f"labels contains duplicate entries: {duplicates!r}")
+
+    missing = [label for label in selected if label not in markers]
+    if missing:
+        raise KeyError(f"No marker set provided for requested labels: {missing!r}")
+    return selected
+
+
+def _count_cells_by_label(obs_labels: pd.Series, labels: Sequence[str]) -> dict[str, int]:
+    return {label: int((obs_labels == label).sum()) for label in labels}
+
+
+# ---------------------------------------------------------------------------
+# Expression source helpers
+
+
+def _validate_expression_source(
+    adata: AnnData,
+    layer: str | None,
+    use_raw: bool | None,
+    *,
+    reject_layer_with_raw: bool = True,
+) -> None:
+    if use_raw:
+        if adata.raw is None:
+            raise ValueError("use_raw=True was requested, but adata.raw is None.")
+        if layer is not None and reject_layer_with_raw:
+            raise ValueError(
+                "layer and use_raw=True cannot be used together because "
+                "adata.raw has no layers."
+            )
+    if layer is not None and layer not in adata.layers:
+        raise KeyError(
+            f"Layer {layer!r} is not present in adata.layers. "
+            f"Available layers: {list(adata.layers.keys())!r}"
+        )
+
+
+def _get_matrix_var_names_and_var(
+    adata: AnnData,
+    *,
+    layer: str | None,
+    use_raw: bool,
+):
+    _validate_expression_source(adata, layer, use_raw)
+    if use_raw:
+        # _validate_expression_source guarantees raw is present.
+        return adata.raw.X, pd.Index(adata.raw.var_names), adata.raw.var
+    if layer is not None:
+        return adata.layers[layer], pd.Index(adata.var_names), adata.var
+    return adata.X, pd.Index(adata.var_names), adata.var
+
+
+def _effective_scanpy_use_raw(
+    adata: AnnData,
+    *,
+    layer: str | None,
+    use_raw: bool | None,
+) -> bool:
+    if layer is not None:
+        if use_raw is True:
+            raise ValueError("Scanpy cannot use both a layer and use_raw=True.")
+        _validate_expression_source(adata, layer, False)
+        return False
+
+    if use_raw is None:
+        return adata.raw is not None
+
+    _validate_expression_source(adata, None, use_raw)
+    return bool(use_raw)
+
+
+# ---------------------------------------------------------------------------
+# Marker and gene resolution helpers
+
+
+def _deduplicate_preserve_order(values: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    deduplicated: list[str] = []
+    for value in values:
+        item = str(value)
+        if item in seen:
+            continue
+        seen.add(item)
+        deduplicated.append(item)
+    return deduplicated
+
+
+def _build_gene_lookup(
+    var_names: pd.Index,
+    var: pd.DataFrame,
+    gene_symbols_key: str | None,
+) -> dict[str, int]:
+    lookup: dict[str, int] = {}
+    for index, var_name in enumerate(var_names):
+        lookup.setdefault(str(var_name), index)
+
+    if gene_symbols_key is None:
+        return lookup
+
+    if gene_symbols_key not in var:
+        raise KeyError(
+            f"gene_symbols_key {gene_symbols_key!r} is not present in var. "
+            f"Available columns include: {list(var.columns[:10])!r}"
+        )
+
+    symbols = var[gene_symbols_key]
+    symbol_counts = symbols[symbols.notna()].astype(str).value_counts()
+    for index, raw_symbol in enumerate(symbols):
+        if pd.isna(raw_symbol):
+            continue
+        symbol = str(raw_symbol)
+        if symbol_counts.get(symbol, 0) != 1:
+            continue
+        # Keep exact var_name matches authoritative.
+        lookup.setdefault(symbol, index)
+
+    return lookup
+
+
+def _resolve_marker_set(
+    marker_genes: Sequence[str],
+    lookup: Mapping[str, int],
+    var_names: pd.Index,
+) -> ResolvedMarkerSet:
+    if isinstance(marker_genes, str):
+        raise ValueError(
+            "Marker sets must be sequences of gene names, not a single string. "
+            f"Got {marker_genes!r}."
+        )
+    provided = _deduplicate_preserve_order(marker_genes)
+    used_input_names: list[str] = []
+    used_var_names: list[str] = []
+    used_indices: list[int] = []
+    missing: list[str] = []
+    seen_indices: set[int] = set()
+
+    for marker in provided:
+        index = lookup.get(marker)
+        if index is None:
+            missing.append(marker)
+            continue
+        if index in seen_indices:
+            # Two input names can resolve to the same variable (e.g. var_name and
+            # symbol). Count/use that variable once for computation.
+            continue
+        seen_indices.add(index)
+        used_input_names.append(marker)
+        used_var_names.append(str(var_names[index]))
+        used_indices.append(index)
+
+    return ResolvedMarkerSet(
+        provided=provided,
+        used_input_names=used_input_names,
+        used_var_names=used_var_names,
+        used_indices=used_indices,
+        missing=missing,
+    )
+
+
+def _resolve_marker_sets(
+    markers: MarkerSets,
+    labels: Sequence[str],
+    var_names: pd.Index,
+    var: pd.DataFrame,
+    gene_symbols_key: str | None,
+) -> dict[str, ResolvedMarkerSet]:
+    lookup = _build_gene_lookup(var_names, var, gene_symbols_key)
+    return {
+        label: _resolve_marker_set(markers[label], lookup, var_names)
+        for label in labels
+    }
+
+
+def _resolve_gene_pool(
+    gene_pool: Sequence[str] | None,
+    lookup: Mapping[str, int],
+    var_names: pd.Index,
+) -> list[str] | None:
+    if gene_pool is None:
+        return None
+
+    resolved = _resolve_marker_set(gene_pool, lookup, var_names).used_var_names
+    if not resolved:
+        raise ValueError("gene_pool was supplied but none of its genes resolved.")
+    return resolved
+
+
+def _make_unique_index_strings(index: pd.Index, *, join: str = "-") -> pd.Index:
+    """Return a string index with duplicate names made unique like AnnData."""
+    used: set[str] = set()
+    counts: dict[str, int] = {}
+    values: list[str] = []
+    for raw_value in index:
+        value = str(raw_value)
+        if value not in used:
+            used.add(value)
+            counts[value] = 0
+            values.append(value)
+            continue
+
+        counts[value] = counts.get(value, 0) + 1
+        candidate = f"{value}{join}{counts[value]}"
+        while candidate in used:
+            counts[value] += 1
+            candidate = f"{value}{join}{counts[value]}"
+        used.add(candidate)
+        values.append(candidate)
+    return pd.Index(values)
+
+
+# ---------------------------------------------------------------------------
+# Numeric helpers
+
+
+def _column_means(matrix, row_mask: np.ndarray, col_indices: Sequence[int]) -> np.ndarray:
+    if len(col_indices) == 0:
+        return np.asarray([], dtype=float)
+
+    mask = np.asarray(row_mask, dtype=bool)
+    subset = matrix[mask, :][:, list(col_indices)]
+    means = subset.mean(axis=0)
+    if sparse.issparse(means):
+        means = means.A
+    return np.asarray(means, dtype=float).ravel()
+
+
+def _safe_fraction(numerator: int, denominator: int) -> float:
+    return np.nan if denominator == 0 else float(numerator) / float(denominator)
+
+
+def _format_float_for_column(value: float) -> str:
+    return f"{value:g}"
+
+
+def _logfc_fraction_column(logfc_threshold: float) -> str:
+    return f"fraction_markers_logFC_gt_{_format_float_for_column(logfc_threshold)}"
+
+
+def _topn_recall_column(top_n: int) -> str:
+    return f"marker_recall_top{top_n}_DE"
+
+
+def _empty_de_table() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "cell_type",
+            "rank",
+            "names",
+            "scores",
+            "logfoldchanges",
+            "pvals",
+            "pvals_adj",
+            "is_marker_for_group",
+            "is_significant_upregulated",
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Private computation helpers used by public APIs
+
+
+def _marker_set_summary_from_resolved(
+    labels: Sequence[str],
+    obs_labels: pd.Series,
+    resolved: Mapping[str, ResolvedMarkerSet],
+) -> pd.DataFrame:
+    counts = _count_cells_by_label(obs_labels, labels)
+    rows = []
+    for label in labels:
+        marker_set = resolved[label]
+        rows.append(
+            {
+                "cell_type": label,
+                "n_cells": counts[label],
+                "n_markers_provided": len(marker_set.provided),
+                "n_markers_used": len(marker_set.used_var_names),
+                "missing_marker_names": list(marker_set.missing),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _marker_logfc_metrics_from_resolved(
+    matrix,
+    labels: Sequence[str],
+    obs_labels: pd.Series,
+    resolved: Mapping[str, ResolvedMarkerSet],
+    *,
+    pseudocount: float,
+    logfc_threshold: float,
+    min_cells: int,
+    return_per_marker: bool,
+) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
+    if pseudocount <= 0:
+        raise ValueError("pseudocount must be greater than 0.")
+    if min_cells < 1:
+        raise ValueError("min_cells must be at least 1.")
+
+    threshold_column = _logfc_fraction_column(logfc_threshold)
+    summary_rows: list[dict[str, object]] = []
+    per_marker_rows: list[dict[str, object]] = []
+
+    for label in labels:
+        target_mask = np.asarray(obs_labels == label, dtype=bool)
+        rest_mask = ~target_mask
+        n_cells = int(target_mask.sum())
+        n_rest_cells = int(rest_mask.sum())
+        marker_set = resolved[label]
+        n_markers_used = len(marker_set.used_indices)
+
+        means = np.full(n_markers_used, np.nan, dtype=float)
+        rest_means = np.full(n_markers_used, np.nan, dtype=float)
+        marker_logfc = np.full(n_markers_used, np.nan, dtype=float)
+
+        evaluable = (
+            n_cells >= min_cells
+            and n_rest_cells > 0
+            and n_markers_used > 0
+        )
+        if evaluable:
+            means = _column_means(matrix, target_mask, marker_set.used_indices)
+            rest_means = _column_means(matrix, rest_mask, marker_set.used_indices)
+            marker_logfc = np.log2((means + pseudocount) / (rest_means + pseudocount))
+            mean_logfc = float(np.nanmean(marker_logfc))
+            fraction = float(np.sum(marker_logfc > logfc_threshold) / n_markers_used)
+        else:
+            mean_logfc = np.nan
+            fraction = np.nan
+
+        summary_rows.append(
+            {
+                "cell_type": label,
+                "n_cells": n_cells,
+                "n_rest_cells": n_rest_cells,
+                "n_markers_provided": len(marker_set.provided),
+                "n_markers_used": n_markers_used,
+                "mean_marker_logFC": mean_logfc,
+                threshold_column: fraction,
+            }
+        )
+
+        if return_per_marker:
+            for marker, var_name, mean, rest_mean, logfc in zip(
+                marker_set.used_input_names,
+                marker_set.used_var_names,
+                means,
+                rest_means,
+                marker_logfc,
+                strict=True,
+            ):
+                per_marker_rows.append(
+                    {
+                        "cell_type": label,
+                        "marker": marker,
+                        "var_name": var_name,
+                        "mean_expression": float(mean) if not np.isnan(mean) else np.nan,
+                        "rest_mean_expression": (
+                            float(rest_mean) if not np.isnan(rest_mean) else np.nan
+                        ),
+                        "marker_logFC": float(logfc) if not np.isnan(logfc) else np.nan,
+                        "is_logFC_gt_threshold": (
+                            bool(logfc > logfc_threshold)
+                            if not np.isnan(logfc)
+                            else np.nan
+                        ),
+                    }
+                )
+
+    summary = pd.DataFrame(summary_rows)
+    if not return_per_marker:
+        return summary
+    per_marker = pd.DataFrame(
+        per_marker_rows,
+        columns=[
+            "cell_type",
+            "marker",
+            "var_name",
+            "mean_expression",
+            "rest_mean_expression",
+            "marker_logFC",
+            "is_logFC_gt_threshold",
+        ],
+    )
+    return summary, per_marker
+
+
+def _compute_marker_scores(
+    adata: AnnData,
+    markers: MarkerSets,
+    labels: Sequence[str],
+    *,
+    layer: str | None,
+    use_raw: bool,
+    gene_symbols_key: str | None,
+    ctrl_size: int,
+    gene_pool: Sequence[str] | None,
+    n_bins: int,
+    random_state: int | None,
+    score_prefix: str,
+    copy_scores_to_obs: bool,
+) -> pd.DataFrame:
+    import scanpy as sc
+
+    _validate_expression_source(adata, layer, use_raw)
+    _, var_names, var = _get_matrix_var_names_and_var(adata, layer=layer, use_raw=use_raw)
+    resolved = _resolve_marker_sets(markers, labels, var_names, var, gene_symbols_key)
+    lookup = _build_gene_lookup(var_names, var, gene_symbols_key)
+    resolved_gene_pool_indices: list[int] | None = None
+    if gene_pool is not None:
+        resolved_gene_pool_set = _resolve_marker_set(gene_pool, lookup, var_names)
+        resolved_gene_pool_indices = resolved_gene_pool_set.used_indices
+        if not resolved_gene_pool_indices:
+            raise ValueError("gene_pool was supplied but none of its genes resolved.")
+
+    score_use_raw = use_raw
+    score_layer = layer
+    if use_raw:
+        # Scanpy's score_genes requires a unique gene index. raw.var_names cannot
+        # be safely changed in-place, so score against a temporary raw AnnData.
+        work_adata = adata.raw.to_adata()
+        work_adata.obs = adata.obs.copy()
+        score_use_raw = False
+        score_layer = None
+    elif copy_scores_to_obs and var_names.is_unique:
+        work_adata = adata
+    else:
+        work_adata = adata.copy()
+
+    score_var_names = pd.Index(work_adata.var_names)
+    if not score_var_names.is_unique:
+        score_var_names = _make_unique_index_strings(score_var_names)
+        work_adata.var_names = score_var_names
+
+    resolved_gene_pool = (
+        None
+        if resolved_gene_pool_indices is None
+        else [str(score_var_names[index]) for index in resolved_gene_pool_indices]
+    )
+    scores = pd.DataFrame(index=adata.obs_names)
+
+    for label in labels:
+        marker_set = resolved[label]
+        score_name = f"{score_prefix}{label}"
+        if not marker_set.used_indices:
+            score_values = np.full(adata.n_obs, np.nan, dtype=float)
+            if copy_scores_to_obs:
+                adata.obs[score_name] = score_values
+        else:
+            gene_list = [str(score_var_names[index]) for index in marker_set.used_indices]
+            try:
+                sc.tl.score_genes(
+                    work_adata,
+                    gene_list=gene_list,
+                    score_name=score_name,
+                    ctrl_size=ctrl_size,
+                    gene_pool=resolved_gene_pool,
+                    n_bins=n_bins,
+                    random_state=random_state,
+                    use_raw=score_use_raw,
+                    layer=score_layer,
+                    copy=False,
+                )
+            except RuntimeError as error:
+                if "No control genes found" not in str(error):
+                    raise
+                score_values = np.full(adata.n_obs, np.nan, dtype=float)
+                if copy_scores_to_obs:
+                    adata.obs[score_name] = score_values
+            else:
+                score_values = work_adata.obs[score_name].to_numpy(dtype=float)
+                if copy_scores_to_obs and work_adata is not adata:
+                    adata.obs[score_name] = score_values
+        scores[label] = score_values
+
+    return scores
+
+
+def _marker_score_metrics_from_scores(
+    scores: pd.DataFrame,
+    labels: Sequence[str],
+    obs_labels: pd.Series,
+    *,
+    include_median_assigned_score: bool,
+) -> pd.DataFrame:
+    numeric_scores = scores.loc[:, list(labels)].apply(pd.to_numeric, errors="coerce")
+
+    non_nan_rows = numeric_scores.notna().any(axis=1)
+    top_labels = pd.Series(pd.NA, index=numeric_scores.index, dtype="object")
+    if non_nan_rows.any():
+        top_labels.loc[non_nan_rows] = numeric_scores.loc[non_nan_rows].idxmax(axis=1)
+
+    rows: list[dict[str, object]] = []
+    for label in labels:
+        cell_mask = np.asarray(obs_labels == label, dtype=bool)
+        n_cells = int(cell_mask.sum())
+        row: dict[str, object] = {"cell_type": label, "n_cells": n_cells}
+
+        assigned_unavailable = (
+            n_cells == 0
+            or label not in numeric_scores
+            or numeric_scores.loc[cell_mask, label].isna().all()
+        )
+        if assigned_unavailable:
+            row["correct_top_score_fraction"] = np.nan
+            row["median_score_margin"] = np.nan
+            if include_median_assigned_score:
+                row["median_assigned_marker_score"] = np.nan
+            rows.append(row)
+            continue
+
+        assigned_scores = numeric_scores.loc[cell_mask, label]
+        row["correct_top_score_fraction"] = float(
+            (top_labels.loc[cell_mask] == label).sum() / n_cells
+        )
+
+        if len(labels) <= 1:
+            row["median_score_margin"] = np.nan
+        else:
+            alternative_labels = [other for other in labels if other != label]
+            alternative_scores = numeric_scores.loc[cell_mask, alternative_labels]
+            best_alternative = alternative_scores.max(axis=1, skipna=True)
+            margins = assigned_scores - best_alternative
+            row["median_score_margin"] = (
+                float(np.nanmedian(margins.to_numpy(dtype=float)))
+                if margins.notna().any()
+                else np.nan
+            )
+
+        if include_median_assigned_score:
+            row["median_assigned_marker_score"] = (
+                float(np.nanmedian(assigned_scores.to_numpy(dtype=float)))
+                if assigned_scores.notna().any()
+                else np.nan
+            )
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
+def _de_var_namespace(
+    adata: AnnData,
+    *,
+    layer: str | None,
+    effective_use_raw: bool,
+) -> tuple[pd.Index, pd.DataFrame]:
+    if effective_use_raw:
+        if adata.raw is None:
+            raise ValueError("use_raw=True was requested, but adata.raw is None.")
+        return pd.Index(adata.raw.var_names), adata.raw.var
+    _validate_expression_source(adata, layer, False)
+    return pd.Index(adata.var_names), adata.var
+
+
+def _extract_rank_genes_groups_df(
+    work_adata: AnnData,
+    groups: Sequence[str],
+    key_added: str,
+) -> pd.DataFrame:
+    import scanpy as sc
+
+    tables: list[pd.DataFrame] = []
+    for group in groups:
+        group_df = sc.get.rank_genes_groups_df(work_adata, group=group, key=key_added)
+        group_df = group_df.copy()
+        if "group" in group_df:
+            group_df = group_df.rename(columns={"group": "cell_type"})
+        if "cell_type" not in group_df:
+            group_df.insert(0, "cell_type", group)
+        tables.append(group_df)
+    if not tables:
+        return _empty_de_table()
+    return pd.concat(tables, ignore_index=True)
+
+
+def _marker_de_recovery_metrics_from_resolved(
+    adata: AnnData,
+    labels: Sequence[str],
+    obs_labels: pd.Series,
+    resolved: Mapping[str, ResolvedMarkerSet],
+    *,
+    layer: str | None,
+    effective_use_raw: bool,
+    gene_symbols_key: str | None,
+    source_var: pd.DataFrame,
+    method: Literal["wilcoxon", "t-test", "t-test_overestim_var"],
+    alpha: float,
+    logfc_threshold: float,
+    top_n: int,
+    rank_by: Literal["scores", "logfoldchanges", "pvals_adj"],
+    corr_method: Literal["benjamini-hochberg", "bonferroni"],
+    tie_correct: bool,
+    key_added: str,
+    return_de_table: bool,
+) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
+    import scanpy as sc
+
+    if not 0 <= alpha <= 1:
+        raise ValueError("alpha must be between 0 and 1, inclusive.")
+    if top_n < 1:
+        raise ValueError("top_n must be at least 1.")
+    if rank_by not in {"scores", "logfoldchanges", "pvals_adj"}:
+        raise ValueError("rank_by must be one of 'scores', 'logfoldchanges', or 'pvals_adj'.")
+
+    counts = _count_cells_by_label(obs_labels, labels)
+    recall_column = _topn_recall_column(top_n)
+    observed_groups = pd.Index(obs_labels.dropna().astype(str).unique())
+    total_cells = int(adata.n_obs)
+    present_selected_labels = [
+        label
+        for label in labels
+        if counts[label] >= 2 and total_cells - counts[label] >= 2
+    ]
+
+    de_df = _empty_de_table()
+    de_var_names = pd.Index(source_var.index.astype(str))
+    if len(observed_groups) >= 2 and present_selected_labels:
+        if effective_use_raw:
+            work_adata = adata.raw.to_adata()
+            work_adata.obs = adata.obs.copy()
+            de_use_raw = False
+            de_layer = None
+        else:
+            work_adata = adata.copy()
+            de_use_raw = False
+            de_layer = layer
+
+        de_var_names = pd.Index(work_adata.var_names.astype(str))
+        if not de_var_names.is_unique:
+            de_var_names = _make_unique_index_strings(de_var_names)
+            work_adata.var_names = de_var_names
+
+        sc.tl.rank_genes_groups(
+            work_adata,
+            groupby=obs_labels.name,
+            groups=present_selected_labels,
+            reference="rest",
+            method=method,
+            corr_method=corr_method,
+            tie_correct=tie_correct,
+            key_added=key_added,
+            use_raw=de_use_raw,
+            layer=de_layer,
+            copy=False,
+        )
+        de_df = _extract_rank_genes_groups_df(work_adata, present_selected_labels, key_added)
+        de_df = de_df.reset_index(drop=True)
+        de_df["rank"] = de_df.groupby("cell_type", sort=False).cumcount() + 1
+
+        if gene_symbols_key is not None and gene_symbols_key in source_var:
+            symbol_lookup = {
+                str(var_name): source_var[gene_symbols_key].iloc[index]
+                for index, var_name in enumerate(de_var_names)
+                if pd.notna(source_var[gene_symbols_key].iloc[index])
+            }
+            de_df[gene_symbols_key] = de_df["names"].astype(str).map(symbol_lookup)
+
+        marker_lookup = {
+            label: {str(de_var_names[index]) for index in resolved[label].used_indices}
+            for label in labels
+        }
+        de_df["is_marker_for_group"] = [
+            str(name) in marker_lookup.get(str(cell_type), set())
+            for cell_type, name in zip(de_df["cell_type"], de_df["names"], strict=False)
+        ]
+        de_df["is_significant_upregulated"] = (
+            (pd.to_numeric(de_df.get("pvals_adj"), errors="coerce") < alpha)
+            & (pd.to_numeric(de_df.get("logfoldchanges"), errors="coerce") > logfc_threshold)
+        )
+
+    summary_rows: list[dict[str, object]] = []
+    for label in labels:
+        marker_set = resolved[label]
+        n_markers_used = len(marker_set.used_var_names)
+        group_de = de_df.loc[de_df["cell_type"].astype(str) == str(label)].copy()
+
+        if n_markers_used == 0 or group_de.empty:
+            fraction_significant = np.nan
+            topn_recall = np.nan
+        else:
+            markers_used = set(marker_set.used_var_names)
+            significant_genes = set(
+                group_de.loc[group_de["is_significant_upregulated"], "names"].astype(str)
+            )
+            fraction_significant = _safe_fraction(
+                len(markers_used.intersection(significant_genes)),
+                n_markers_used,
+            )
+
+            ascending = rank_by == "pvals_adj"
+            sorted_group = group_de.sort_values(
+                by=rank_by,
+                ascending=ascending,
+                na_position="last",
+                kind="mergesort",
+            )
+            top_genes = set(sorted_group.head(top_n)["names"].astype(str))
+            topn_recall = _safe_fraction(len(markers_used.intersection(top_genes)), n_markers_used)
+
+        summary_rows.append(
+            {
+                "cell_type": label,
+                "n_cells": counts[label],
+                "n_markers_provided": len(marker_set.provided),
+                "n_markers_used": n_markers_used,
+                "fraction_markers_significant_DE": fraction_significant,
+                recall_column: topn_recall,
+            }
+        )
+
+    summary = pd.DataFrame(summary_rows)
+    if return_de_table:
+        return summary, de_df.reset_index(drop=True)
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# Public API
 
 
 def marker_set_summary(
@@ -26,48 +773,18 @@ def marker_set_summary(
     gene_symbols_key: str | None = None,
     labels: Sequence[str] | None = None,
 ) -> pd.DataFrame:
-    """Summarize available marker genes and cell counts per annotated cell type.
+    """Summarize marker availability and annotation cell counts.
 
-    Returns one row per cell type with the number of cells, number of provided
-    markers, number of markers found in the AnnData object, and optionally
-    missing marker names.
-
-    Parameters
-    ----------
-    adata
-        Annotated data matrix.
-    markers
-        Mapping from cell type name to marker gene names.
-    label_key
-        Column in ``adata.obs`` containing cell type annotations.
-    layer
-        Optional layer name to use when checking available genes/data source.
-    use_raw
-        Whether to use ``adata.raw`` instead of ``adata.X``.
-    gene_symbols_key
-        Optional column in ``adata.var`` or ``adata.raw.var`` containing gene
-        symbols if markers are not keyed by ``var_names``.
-    labels
-        Optional subset/order of cell types to evaluate.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Marker availability summary with one row per selected label, in selected
-        label order, and a default ``RangeIndex``. Columns are:
-
-        - ``cell_type``: selected marker-set/cell-type label.
-        - ``n_cells``: number of observations whose ``adata.obs[label_key]``
-          value equals ``cell_type``.
-        - ``n_markers_provided``: number of unique marker names supplied for
-          ``cell_type`` after preserving first occurrence and dropping duplicate
-          marker entries.
-        - ``n_markers_used``: number of provided markers resolved to variables
-          in the selected expression source.
-        - ``missing_marker_names``: list of provided marker names that could not
-          be resolved in the selected expression source.
+    Returns one row per selected marker-set label with ``cell_type``,
+    ``n_cells``, ``n_markers_provided``, ``n_markers_used``, and
+    ``missing_marker_names``. Marker genes are resolved against the selected
+    expression source and output rows preserve selected label order.
     """
-    raise NotImplementedError
+    obs_labels = _validate_label_key(adata, label_key)
+    selected = _selected_labels(markers, labels)
+    _, var_names, var = _get_matrix_var_names_and_var(adata, layer=layer, use_raw=use_raw)
+    resolved = _resolve_marker_sets(markers, selected, var_names, var, gene_symbols_key)
+    return _marker_set_summary_from_resolved(selected, obs_labels, resolved)
 
 
 def marker_logfc_metrics(
@@ -84,74 +801,27 @@ def marker_logfc_metrics(
     min_cells: int = 1,
     return_per_marker: bool = False,
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
-    """Compute one-vs-rest marker expression enrichment metrics per cell type.
+    """Compute one-vs-rest marker expression enrichment per cell type.
 
-    For each marker gene of each cell type, computes log2 fold change between
-    cells annotated as that type and all remaining cells. Summarizes marker
-    enrichment as mean marker logFC and fraction of markers above a configurable
-    logFC threshold.
-
-    Parameters
-    ----------
-    adata
-        Annotated data matrix.
-    markers
-        Mapping from cell type name to marker gene names.
-    label_key
-        Column in ``adata.obs`` containing cell type annotations.
-    layer
-        Optional layer to use for expression values.
-    use_raw
-        Whether to use ``adata.raw``.
-    gene_symbols_key
-        Optional gene-symbol column in ``adata.var``.
-    labels
-        Optional subset/order of cell types to evaluate.
-    pseudocount
-        Small value added to group means before computing log fold change.
-    logfc_threshold
-        Threshold used for the enriched-marker fraction.
-    min_cells
-        Minimum number of cells required for a cell type to be evaluated.
-    return_per_marker
-        If True, also return a per-marker table with mean expression and logFC.
-
-    Returns
-    -------
-    pandas.DataFrame or tuple[pandas.DataFrame, pandas.DataFrame]
-        If ``return_per_marker`` is False, returns a summary ``DataFrame`` with
-        one row per selected label, in selected label order, and a default
-        ``RangeIndex``. Summary columns are:
-
-        - ``cell_type``: selected marker-set/cell-type label.
-        - ``n_cells``: number of cells assigned to ``cell_type``.
-        - ``n_rest_cells``: number of cells not assigned to ``cell_type``.
-        - ``n_markers_provided``: number of unique marker names supplied for
-          ``cell_type`` after duplicate removal.
-        - ``n_markers_used``: number of provided markers resolved to variables
-          in the selected expression source.
-        - ``mean_marker_logFC``: mean per-marker one-vs-rest log2 fold change
-          across resolved markers; ``NaN`` when the comparison is unevaluable.
-        - ``fraction_markers_logFC_gt_<threshold>``: fraction of resolved
-          markers with log2 fold change greater than ``logfc_threshold``; the
-          suffix is formatted from ``logfc_threshold`` (for example,
-          ``fraction_markers_logFC_gt_0.25``).
-
-        If ``return_per_marker`` is True, returns ``(summary, per_marker)``.
-        ``per_marker`` has one row per resolved marker for each selected label
-        and a default ``RangeIndex``. Per-marker columns are:
-
-        - ``cell_type``: selected marker-set/cell-type label.
-        - ``marker``: original marker name supplied by the caller.
-        - ``var_name``: resolved variable name used to extract expression.
-        - ``mean_expression``: mean expression among cells assigned to
-          ``cell_type``.
-        - ``rest_mean_expression``: mean expression among all other cells.
-        - ``marker_logFC``: one-vs-rest log2 fold change for the marker.
-        - ``is_logFC_gt_threshold``: whether ``marker_logFC`` is greater than
-          ``logfc_threshold``.
+    For each selected label, compares target-cell and rest-cell marker means and
+    reports mean marker log2 fold-change plus the fraction above
+    ``logfc_threshold``. If requested, also returns one row per resolved marker.
+    Unevaluable comparisons are represented with ``NaN`` metrics.
     """
-    raise NotImplementedError
+    obs_labels = _validate_label_key(adata, label_key)
+    selected = _selected_labels(markers, labels)
+    matrix, var_names, var = _get_matrix_var_names_and_var(adata, layer=layer, use_raw=use_raw)
+    resolved = _resolve_marker_sets(markers, selected, var_names, var, gene_symbols_key)
+    return _marker_logfc_metrics_from_resolved(
+        matrix,
+        selected,
+        obs_labels,
+        resolved,
+        pseudocount=pseudocount,
+        logfc_threshold=logfc_threshold,
+        min_cells=min_cells,
+        return_per_marker=return_per_marker,
+    )
 
 
 def marker_set_scores(
@@ -169,50 +839,28 @@ def marker_set_scores(
     score_prefix: str = "marker_score__",
     copy_scores_to_obs: bool = False,
 ) -> pd.DataFrame:
-    """Compute marker-set/module scores for each marker set.
+    """Compute Scanpy marker-set/module scores for each marker set.
 
-    Intended to use Scanpy's ``score_genes`` and return a cell-by-cell-type
-    score matrix where rows are cells and columns are marker-set labels.
-
-    Parameters
-    ----------
-    adata
-        Annotated data matrix.
-    markers
-        Mapping from cell type name to marker gene names.
-    layer
-        Optional layer to use for expression values.
-    use_raw
-        Whether to use ``adata.raw``.
-    gene_symbols_key
-        Optional gene-symbol column in ``adata.var``.
-    labels
-        Optional subset/order of marker sets to score.
-    ctrl_size
-        Number of control genes sampled per expression bin by Scanpy.
-    gene_pool
-        Optional background gene pool for control gene selection.
-    n_bins
-        Number of expression bins used by Scanpy.
-    random_state
-        Random seed for reproducible control-gene sampling.
-    score_prefix
-        Prefix used if scores are written to ``adata.obs``.
-    copy_scores_to_obs
-        If True, store computed scores in ``adata.obs``.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Cell-by-marker-set score matrix. The index is ``adata.obs_names`` in
-        observation order. Columns are the selected marker-set labels in selected
-        label order. Values are Scanpy module scores for each cell and marker
-        set. A marker set with no resolved markers is represented by an all-
-        ``NaN`` column. When ``copy_scores_to_obs=True``, the same scores are
-        also written to ``adata.obs`` using columns named
-        ``f"{score_prefix}{label}"``.
+    Returns a cell-by-marker-set score matrix indexed by ``adata.obs_names``.
+    The original AnnData is not mutated unless ``copy_scores_to_obs=True``, in
+    which case score columns named ``f"{score_prefix}{label}"`` are written to
+    ``adata.obs``.
     """
-    raise NotImplementedError
+    selected = _selected_labels(markers, labels)
+    return _compute_marker_scores(
+        adata,
+        markers,
+        selected,
+        layer=layer,
+        use_raw=use_raw,
+        gene_symbols_key=gene_symbols_key,
+        ctrl_size=ctrl_size,
+        gene_pool=gene_pool,
+        n_bins=n_bins,
+        random_state=random_state,
+        score_prefix=score_prefix,
+        copy_scores_to_obs=copy_scores_to_obs,
+    )
 
 
 def marker_score_metrics(
@@ -230,60 +878,35 @@ def marker_score_metrics(
     random_state: int | None = 0,
     include_median_assigned_score: bool = True,
 ) -> pd.DataFrame:
-    """Compute marker-set agreement metrics from per-cell marker scores.
+    """Summarize marker-score agreement with assigned annotations.
 
-    For each cell, identifies the highest-scoring marker set. For each annotated
-    cell type, reports the fraction of cells whose assigned annotation is the
-    top-scoring marker set and the median score margin against the best
-    alternative marker set.
-
-    Parameters
-    ----------
-    adata
-        Annotated data matrix.
-    markers
-        Mapping from cell type name to marker gene names.
-    label_key
-        Column in ``adata.obs`` containing assigned annotations.
-    layer
-        Optional expression layer.
-    use_raw
-        Whether to use ``adata.raw``.
-    gene_symbols_key
-        Optional gene-symbol column in ``adata.var``.
-    labels
-        Optional subset/order of cell types to evaluate.
-    ctrl_size
-        Control gene count for Scanpy ``score_genes``.
-    gene_pool
-        Optional background gene pool.
-    n_bins
-        Number of expression bins for control gene matching.
-    random_state
-        Random seed for module score calculation.
-    include_median_assigned_score
-        Whether to include the median assigned marker score.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Marker-score agreement summary with one row per selected label, in
-        selected label order, and a default ``RangeIndex``. Columns are:
-
-        - ``cell_type``: selected marker-set/cell-type label.
-        - ``n_cells``: number of cells assigned to ``cell_type``.
-        - ``correct_top_score_fraction``: fraction of cells assigned to
-          ``cell_type`` whose highest marker-set score is also ``cell_type``;
-          ``NaN`` when no assigned cells or scores are available.
-        - ``median_score_margin``: median, over cells assigned to
-          ``cell_type``, of the assigned marker-set score minus the best
-          alternative marker-set score; ``NaN`` when no valid alternative score
-          comparison is available.
-        - ``median_assigned_marker_score``: included only when
-          ``include_median_assigned_score`` is True; median marker-set score for
-          the assigned ``cell_type`` among cells assigned to that label.
+    Computes marker-set scores internally, identifies each cell's top-scoring
+    selected marker set, and reports per-label top-score agreement and median
+    assigned-vs-best-alternative score margin. The original AnnData is not
+    modified.
     """
-    raise NotImplementedError
+    obs_labels = _validate_label_key(adata, label_key)
+    selected = _selected_labels(markers, labels)
+    scores = _compute_marker_scores(
+        adata,
+        markers,
+        selected,
+        layer=layer,
+        use_raw=use_raw,
+        gene_symbols_key=gene_symbols_key,
+        ctrl_size=ctrl_size,
+        gene_pool=gene_pool,
+        n_bins=n_bins,
+        random_state=random_state,
+        score_prefix="__marker_qc_score__",
+        copy_scores_to_obs=False,
+    )
+    return _marker_score_metrics_from_scores(
+        scores,
+        selected,
+        obs_labels,
+        include_median_assigned_score=include_median_assigned_score,
+    )
 
 
 def marker_de_recovery_metrics(
@@ -310,86 +933,35 @@ def marker_de_recovery_metrics(
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """Compute one-vs-rest differential-expression marker recovery metrics.
 
-    Intended to run Scanpy ``rank_genes_groups`` using the annotation column as
-    groups and ``reference="rest"``. For each cell type, calculates the fraction
-    of provided markers recovered as significant upregulated DE genes and the
-    recall of markers among the top N ranked DE genes.
-
-    Parameters
-    ----------
-    adata
-        Annotated data matrix.
-    markers
-        Mapping from cell type name to marker gene names.
-    label_key
-        Column in ``adata.obs`` containing cell type annotations.
-    layer
-        Optional expression layer for DE.
-    use_raw
-        Whether Scanpy should use ``adata.raw``.
-    gene_symbols_key
-        Optional gene-symbol column in ``adata.var``.
-    labels
-        Optional subset/order of cell types to evaluate.
-    method
-        Differential-expression test passed to Scanpy.
-    alpha
-        Adjusted p-value threshold for significant marker recovery.
-    logfc_threshold
-        Minimum log fold change for significant upregulated DE genes.
-    top_n
-        Number of top DE genes used for marker recall.
-    rank_by
-        Field used to rank DE genes for top-N marker recall.
-    corr_method
-        Multiple-testing correction method passed to Scanpy.
-    tie_correct
-        Whether to use tie correction for Wilcoxon.
-    key_added
-        Key used in ``adata.uns`` for Scanpy DE results.
-    return_de_table
-        If True, also return a long-form DE results table.
-
-    Returns
-    -------
-    pandas.DataFrame or tuple[pandas.DataFrame, pandas.DataFrame]
-        If ``return_de_table`` is False, returns a summary ``DataFrame`` with
-        one row per selected label, in selected label order, and a default
-        ``RangeIndex``. Summary columns are:
-
-        - ``cell_type``: selected marker-set/cell-type label.
-        - ``n_cells``: number of cells assigned to ``cell_type``.
-        - ``n_markers_provided``: number of unique marker names supplied for
-          ``cell_type`` after duplicate removal.
-        - ``n_markers_used``: number of provided markers resolved to variables
-          in the DE expression source.
-        - ``fraction_markers_significant_DE``: fraction of resolved markers that
-          are recovered as significant upregulated one-vs-rest DE genes using
-          ``pvals_adj < alpha`` and ``logfoldchanges > logfc_threshold``.
-        - ``marker_recall_top<top_n>_DE``: fraction of resolved markers present
-          among the top ``top_n`` DE genes ranked by ``rank_by`` (for example,
-          ``marker_recall_top50_DE``).
-
-        If ``return_de_table`` is True, returns ``(summary, de_table)``.
-        ``de_table`` is a long-form Scanpy DE result table with one row per gene
-        per tested cell type. It includes, at minimum, these columns:
-
-        - ``cell_type``: DE group/cell type.
-        - ``rank``: rank of the gene within the group's Scanpy DE results.
-        - ``names``: gene/variable name from the DE result.
-        - ``scores``: Scanpy test statistic or score.
-        - ``logfoldchanges``: Scanpy-estimated log fold change.
-        - ``pvals``: unadjusted p-value.
-        - ``pvals_adj``: adjusted p-value.
-        - ``is_marker_for_group``: whether ``names`` is a resolved marker for
-          ``cell_type``.
-        - ``is_significant_upregulated``: whether the row satisfies the
-          significant-upregulated criteria above.
-
-        When ``gene_symbols_key`` is provided and available, ``de_table`` may
-        also include the corresponding gene-symbol column.
+    Runs Scanpy ``rank_genes_groups`` on a temporary AnnData object and reports
+    per-label fractions of resolved markers recovered as significant
+    upregulated DE genes and among the top ``top_n`` ranked DE genes. Optionally
+    returns the annotated long-form DE table.
     """
-    raise NotImplementedError
+    obs_labels = _validate_label_key(adata, label_key)
+    selected = _selected_labels(markers, labels)
+    effective_use_raw = _effective_scanpy_use_raw(adata, layer=layer, use_raw=use_raw)
+    var_names, var = _de_var_namespace(adata, layer=layer, effective_use_raw=effective_use_raw)
+    resolved = _resolve_marker_sets(markers, selected, var_names, var, gene_symbols_key)
+    return _marker_de_recovery_metrics_from_resolved(
+        adata,
+        selected,
+        obs_labels,
+        resolved,
+        layer=layer,
+        effective_use_raw=effective_use_raw,
+        gene_symbols_key=gene_symbols_key,
+        source_var=var,
+        method=method,
+        alpha=alpha,
+        logfc_threshold=logfc_threshold,
+        top_n=top_n,
+        rank_by=rank_by,
+        corr_method=corr_method,
+        tie_correct=tie_correct,
+        key_added=key_added,
+        return_de_table=return_de_table,
+    )
 
 
 def marker_annotation_qc(
@@ -413,79 +985,102 @@ def marker_annotation_qc(
     de_top_n: int = 50,
     include_optional_score_metrics: bool = False,
 ) -> pd.DataFrame:
-    """Compute the full marker-based annotation QC table.
+    """Compute the compact marker-based annotation QC table.
 
-    Combines marker logFC enrichment, marker-set score agreement, and
-    one-vs-rest DE marker recovery into one compact per-cell-type table.
-
-    Parameters
-    ----------
-    adata
-        Annotated data matrix.
-    markers
-        Mapping from cell type name to marker gene names.
-    label_key
-        Column in ``adata.obs`` containing cell type annotations.
-    layer
-        Optional expression layer used across metrics.
-    use_raw
-        Whether to use ``adata.raw``.
-    gene_symbols_key
-        Optional gene-symbol column in ``adata.var``.
-    labels
-        Optional subset/order of cell types to evaluate.
-    logfc_pseudocount
-        Pseudocount for marker logFC calculations.
-    logfc_threshold
-        Threshold for enriched-marker fraction.
-    score_ctrl_size
-        Control gene count for marker-set scoring.
-    score_gene_pool
-        Optional background gene pool for marker-set scoring.
-    score_n_bins
-        Number of expression bins for marker-set scoring.
-    score_random_state
-        Random seed for marker-set scoring.
-    de_method
-        Differential-expression method.
-    de_alpha
-        Adjusted p-value threshold for significant marker recovery.
-    de_logfc_threshold
-        LogFC threshold for significant marker recovery.
-    de_top_n
-        Top-N DE genes used for marker recall.
-    include_optional_score_metrics
-        Whether to include optional score summaries such as median assigned
-        score.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Final marker-based annotation QC table with one row per selected label,
-        in selected label order, and a default ``RangeIndex``. Columns are:
-
-        - ``cell_type``: selected marker-set/cell-type label.
-        - ``n_cells``: number of cells assigned to ``cell_type``.
-        - ``n_markers_provided``: number of unique marker names supplied for
-          ``cell_type`` after duplicate removal.
-        - ``n_markers_used``: number of provided markers resolved to variables
-          in the selected expression source.
-        - ``mean_marker_logFC``: mean one-vs-rest marker log2 fold change.
-        - ``fraction_markers_logFC_gt_<threshold>``: fraction of resolved
-          markers with log2 fold change greater than ``logfc_threshold``; the
-          suffix is formatted from ``logfc_threshold``.
-        - ``correct_top_score_fraction``: fraction of cells assigned to
-          ``cell_type`` whose highest marker-set score is also ``cell_type``.
-        - ``median_score_margin``: median assigned-vs-best-alternative marker
-          score margin for cells assigned to ``cell_type``.
-        - ``median_assigned_marker_score``: included only when
-          ``include_optional_score_metrics`` is True; median marker-set score for
-          the assigned ``cell_type``.
-        - ``fraction_markers_significant_DE``: fraction of resolved markers
-          recovered as significant upregulated DE genes using ``de_alpha`` and
-          ``de_logfc_threshold``.
-        - ``marker_recall_top<de_top_n>_DE``: fraction of resolved markers among
-          the top ``de_top_n`` DE genes (for example,
-          ``marker_recall_top50_DE``).
+    Composes the private marker availability, logFC, marker-score, and DE
+    recovery computations into the final per-cell-type table recommended by
+    ``METRIC_QC.md``. Output order follows ``labels`` or marker mapping order.
     """
-    raise NotImplementedError
+    obs_labels = _validate_label_key(adata, label_key)
+    selected = _selected_labels(markers, labels)
+    matrix, var_names, var = _get_matrix_var_names_and_var(adata, layer=layer, use_raw=use_raw)
+    resolved = _resolve_marker_sets(markers, selected, var_names, var, gene_symbols_key)
+
+    summary = _marker_set_summary_from_resolved(selected, obs_labels, resolved).drop(
+        columns=["missing_marker_names"]
+    )
+    logfc = _marker_logfc_metrics_from_resolved(
+        matrix,
+        selected,
+        obs_labels,
+        resolved,
+        pseudocount=logfc_pseudocount,
+        logfc_threshold=logfc_threshold,
+        min_cells=1,
+        return_per_marker=False,
+    ).drop(columns=["n_cells", "n_markers_provided", "n_markers_used"])
+    scores = _compute_marker_scores(
+        adata,
+        markers,
+        selected,
+        layer=layer,
+        use_raw=use_raw,
+        gene_symbols_key=gene_symbols_key,
+        ctrl_size=score_ctrl_size,
+        gene_pool=score_gene_pool,
+        n_bins=score_n_bins,
+        random_state=score_random_state,
+        score_prefix="__marker_qc_score__",
+        copy_scores_to_obs=False,
+    )
+    score_metrics = _marker_score_metrics_from_scores(
+        scores,
+        selected,
+        obs_labels,
+        include_median_assigned_score=include_optional_score_metrics,
+    ).drop(columns=["n_cells"])
+
+    effective_use_raw = _effective_scanpy_use_raw(adata, layer=layer, use_raw=use_raw)
+    de_var_names, de_var = _de_var_namespace(
+        adata,
+        layer=layer,
+        effective_use_raw=effective_use_raw,
+    )
+    de_resolved = (
+        resolved
+        if de_var_names.equals(var_names)
+        else _resolve_marker_sets(markers, selected, de_var_names, de_var, gene_symbols_key)
+    )
+    de_metrics = _marker_de_recovery_metrics_from_resolved(
+        adata,
+        selected,
+        obs_labels,
+        de_resolved,
+        layer=layer,
+        effective_use_raw=effective_use_raw,
+        gene_symbols_key=gene_symbols_key,
+        source_var=de_var,
+        method=de_method,
+        alpha=de_alpha,
+        logfc_threshold=de_logfc_threshold,
+        top_n=de_top_n,
+        rank_by="scores",
+        corr_method="benjamini-hochberg",
+        tie_correct=False,
+        key_added="rank_genes_groups_marker_qc",
+        return_de_table=False,
+    ).drop(columns=["n_cells", "n_markers_provided", "n_markers_used"])
+
+    result = summary.merge(logfc, on="cell_type", how="left")
+    result = result.merge(score_metrics, on="cell_type", how="left")
+    result = result.merge(de_metrics, on="cell_type", how="left")
+
+    columns = [
+        "cell_type",
+        "n_cells",
+        "n_markers_provided",
+        "n_markers_used",
+        "mean_marker_logFC",
+        _logfc_fraction_column(logfc_threshold),
+        "correct_top_score_fraction",
+        "median_score_margin",
+    ]
+    if include_optional_score_metrics:
+        columns.append("median_assigned_marker_score")
+    columns.extend(
+        [
+            "fraction_markers_significant_DE",
+            _topn_recall_column(de_top_n),
+        ]
+    )
+    return result.loc[:, columns]
