@@ -53,7 +53,19 @@ def marker_set_summary(
     Returns
     -------
     pandas.DataFrame
-        Per-cell-type marker availability summary.
+        Marker availability summary with one row per selected label, in selected
+        label order, and a default ``RangeIndex``. Columns are:
+
+        - ``cell_type``: selected marker-set/cell-type label.
+        - ``n_cells``: number of observations whose ``adata.obs[label_key]``
+          value equals ``cell_type``.
+        - ``n_markers_provided``: number of unique marker names supplied for
+          ``cell_type`` after preserving first occurrence and dropping duplicate
+          marker entries.
+        - ``n_markers_used``: number of provided markers resolved to variables
+          in the selected expression source.
+        - ``missing_marker_names``: list of provided marker names that could not
+          be resolved in the selected expression source.
     """
     raise NotImplementedError
 
@@ -107,7 +119,37 @@ def marker_logfc_metrics(
     Returns
     -------
     pandas.DataFrame or tuple[pandas.DataFrame, pandas.DataFrame]
-        Summary metrics, and optionally per-marker logFC values.
+        If ``return_per_marker`` is False, returns a summary ``DataFrame`` with
+        one row per selected label, in selected label order, and a default
+        ``RangeIndex``. Summary columns are:
+
+        - ``cell_type``: selected marker-set/cell-type label.
+        - ``n_cells``: number of cells assigned to ``cell_type``.
+        - ``n_rest_cells``: number of cells not assigned to ``cell_type``.
+        - ``n_markers_provided``: number of unique marker names supplied for
+          ``cell_type`` after duplicate removal.
+        - ``n_markers_used``: number of provided markers resolved to variables
+          in the selected expression source.
+        - ``mean_marker_logFC``: mean per-marker one-vs-rest log2 fold change
+          across resolved markers; ``NaN`` when the comparison is unevaluable.
+        - ``fraction_markers_logFC_gt_<threshold>``: fraction of resolved
+          markers with log2 fold change greater than ``logfc_threshold``; the
+          suffix is formatted from ``logfc_threshold`` (for example,
+          ``fraction_markers_logFC_gt_0.25``).
+
+        If ``return_per_marker`` is True, returns ``(summary, per_marker)``.
+        ``per_marker`` has one row per resolved marker for each selected label
+        and a default ``RangeIndex``. Per-marker columns are:
+
+        - ``cell_type``: selected marker-set/cell-type label.
+        - ``marker``: original marker name supplied by the caller.
+        - ``var_name``: resolved variable name used to extract expression.
+        - ``mean_expression``: mean expression among cells assigned to
+          ``cell_type``.
+        - ``rest_mean_expression``: mean expression among all other cells.
+        - ``marker_logFC``: one-vs-rest log2 fold change for the marker.
+        - ``is_logFC_gt_threshold``: whether ``marker_logFC`` is greater than
+          ``logfc_threshold``.
     """
     raise NotImplementedError
 
@@ -162,7 +204,13 @@ def marker_set_scores(
     Returns
     -------
     pandas.DataFrame
-        Score matrix with cells as rows and marker-set labels as columns.
+        Cell-by-marker-set score matrix. The index is ``adata.obs_names`` in
+        observation order. Columns are the selected marker-set labels in selected
+        label order. Values are Scanpy module scores for each cell and marker
+        set. A marker set with no resolved markers is represented by an all-
+        ``NaN`` column. When ``copy_scores_to_obs=True``, the same scores are
+        also written to ``adata.obs`` using columns named
+        ``f"{score_prefix}{label}"``.
     """
     raise NotImplementedError
 
@@ -219,7 +267,21 @@ def marker_score_metrics(
     Returns
     -------
     pandas.DataFrame
-        Per-cell-type marker-score QC metrics.
+        Marker-score agreement summary with one row per selected label, in
+        selected label order, and a default ``RangeIndex``. Columns are:
+
+        - ``cell_type``: selected marker-set/cell-type label.
+        - ``n_cells``: number of cells assigned to ``cell_type``.
+        - ``correct_top_score_fraction``: fraction of cells assigned to
+          ``cell_type`` whose highest marker-set score is also ``cell_type``;
+          ``NaN`` when no assigned cells or scores are available.
+        - ``median_score_margin``: median, over cells assigned to
+          ``cell_type``, of the assigned marker-set score minus the best
+          alternative marker-set score; ``NaN`` when no valid alternative score
+          comparison is available.
+        - ``median_assigned_marker_score``: included only when
+          ``include_median_assigned_score`` is True; median marker-set score for
+          the assigned ``cell_type`` among cells assigned to that label.
     """
     raise NotImplementedError
 
@@ -291,7 +353,41 @@ def marker_de_recovery_metrics(
     Returns
     -------
     pandas.DataFrame or tuple[pandas.DataFrame, pandas.DataFrame]
-        Per-cell-type DE recovery metrics, and optionally long-form DE results.
+        If ``return_de_table`` is False, returns a summary ``DataFrame`` with
+        one row per selected label, in selected label order, and a default
+        ``RangeIndex``. Summary columns are:
+
+        - ``cell_type``: selected marker-set/cell-type label.
+        - ``n_cells``: number of cells assigned to ``cell_type``.
+        - ``n_markers_provided``: number of unique marker names supplied for
+          ``cell_type`` after duplicate removal.
+        - ``n_markers_used``: number of provided markers resolved to variables
+          in the DE expression source.
+        - ``fraction_markers_significant_DE``: fraction of resolved markers that
+          are recovered as significant upregulated one-vs-rest DE genes using
+          ``pvals_adj < alpha`` and ``logfoldchanges > logfc_threshold``.
+        - ``marker_recall_top<top_n>_DE``: fraction of resolved markers present
+          among the top ``top_n`` DE genes ranked by ``rank_by`` (for example,
+          ``marker_recall_top50_DE``).
+
+        If ``return_de_table`` is True, returns ``(summary, de_table)``.
+        ``de_table`` is a long-form Scanpy DE result table with one row per gene
+        per tested cell type. It includes, at minimum, these columns:
+
+        - ``cell_type``: DE group/cell type.
+        - ``rank``: rank of the gene within the group's Scanpy DE results.
+        - ``names``: gene/variable name from the DE result.
+        - ``scores``: Scanpy test statistic or score.
+        - ``logfoldchanges``: Scanpy-estimated log fold change.
+        - ``pvals``: unadjusted p-value.
+        - ``pvals_adj``: adjusted p-value.
+        - ``is_marker_for_group``: whether ``names`` is a resolved marker for
+          ``cell_type``.
+        - ``is_significant_upregulated``: whether the row satisfies the
+          significant-upregulated criteria above.
+
+        When ``gene_symbols_key`` is provided and available, ``de_table`` may
+        also include the corresponding gene-symbol column.
     """
     raise NotImplementedError
 
@@ -365,6 +461,31 @@ def marker_annotation_qc(
     Returns
     -------
     pandas.DataFrame
-        Final marker-based annotation QC table.
+        Final marker-based annotation QC table with one row per selected label,
+        in selected label order, and a default ``RangeIndex``. Columns are:
+
+        - ``cell_type``: selected marker-set/cell-type label.
+        - ``n_cells``: number of cells assigned to ``cell_type``.
+        - ``n_markers_provided``: number of unique marker names supplied for
+          ``cell_type`` after duplicate removal.
+        - ``n_markers_used``: number of provided markers resolved to variables
+          in the selected expression source.
+        - ``mean_marker_logFC``: mean one-vs-rest marker log2 fold change.
+        - ``fraction_markers_logFC_gt_<threshold>``: fraction of resolved
+          markers with log2 fold change greater than ``logfc_threshold``; the
+          suffix is formatted from ``logfc_threshold``.
+        - ``correct_top_score_fraction``: fraction of cells assigned to
+          ``cell_type`` whose highest marker-set score is also ``cell_type``.
+        - ``median_score_margin``: median assigned-vs-best-alternative marker
+          score margin for cells assigned to ``cell_type``.
+        - ``median_assigned_marker_score``: included only when
+          ``include_optional_score_metrics`` is True; median marker-set score for
+          the assigned ``cell_type``.
+        - ``fraction_markers_significant_DE``: fraction of resolved markers
+          recovered as significant upregulated DE genes using ``de_alpha`` and
+          ``de_logfc_threshold``.
+        - ``marker_recall_top<de_top_n>_DE``: fraction of resolved markers among
+          the top ``de_top_n`` DE genes (for example,
+          ``marker_recall_top50_DE``).
     """
     raise NotImplementedError
