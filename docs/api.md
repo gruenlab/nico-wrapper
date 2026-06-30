@@ -49,8 +49,10 @@ preprocess_nico_inputs(
     spatial_key: str = "spatial",
     ref_label_key: str = "cluster",
     normalization: NormalizationConfig = NiCoSCTransformConfig(),
-    min_cell_counts: int = 5,
-    min_gene_cells: int = 1,
+    ref_min_cell_counts: int = 5,
+    spatial_min_cell_counts: int = 5,
+    ref_min_gene_cells: int = 1,
+    spatial_min_gene_cells: int = 1,
     gene_space: Literal["shared", "reference_all"] = "shared",
     spatial_n_pcs: int = 30,
     leiden_resolutions: Sequence[float] = (0.4, 0.5),
@@ -71,8 +73,10 @@ preprocess_nico_inputs(
 | `spatial_key` | `.obsm` key containing spatial coordinates. |
 | `ref_label_key` | Reference label column in `.obs`. |
 | `normalization` | `NiCoSCTransformConfig()` or `PearsonResidualsConfig()`. |
-| `min_cell_counts` | Minimum total counts per retained cell. |
-| `min_gene_cells` | Minimum cells per retained gene. |
+| `ref_min_cell_counts` | Minimum total counts per retained cell in reference data. |
+| `spatial_min_cell_counts` | Minimum total counts per retained cell in spatial data. |
+| `ref_min_gene_cells` | Minimum cells per retained gene in reference data. |
+| `spatial_min_gene_cells` | Minimum cells per retained gene in spatial data. |
 | `gene_space` | `"shared"` or `"reference_all"`. |
 | `spatial_n_pcs` | PCs for spatial neighbors/UMAP/Leiden. |
 | `leiden_resolutions` | Spatial Leiden resolutions to compute. |
