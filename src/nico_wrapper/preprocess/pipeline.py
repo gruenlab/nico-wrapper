@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Literal, Sequence
-import warnings
 
-from anndata import AnnData
 import numpy as np
 import scanpy as sc
+from anndata import AnnData
 
 from .config import NiCoSCTransformConfig, NormalizationConfig, PearsonResidualsConfig
 from .validation import (
@@ -25,7 +25,6 @@ from .validation import (
     validate_spatial_adata,
 )
 
-
 OutputPaths = dict[str, Path]
 
 
@@ -38,8 +37,10 @@ def preprocess_nico_inputs(
     spatial_key: str = "spatial",
     ref_label_key: str = "cluster",
     normalization: NormalizationConfig = NiCoSCTransformConfig(),
-    min_cell_counts: int = 5,
-    min_gene_cells: int = 1,
+    ref_min_cell_counts: int = 5,
+    spatial_min_cell_counts: int = 5,
+    ref_min_gene_cells: int = 1,
+    spatial_min_gene_cells: int = 1,
     gene_space: Literal["shared", "reference_all"] = "shared",
     spatial_n_pcs: int = 30,
     leiden_resolutions: Sequence[float] = (0.4, 0.5),
@@ -78,12 +79,18 @@ def preprocess_nico_inputs(
         Normalization configuration. Use ``NiCoSCTransformConfig`` for the
         notebook/paper-style SCTransform path or ``PearsonResidualsConfig`` for
         Scanpy analytic Pearson residuals.
-    min_cell_counts
+    ref_min_cell_counts
         Minimum total counts required for a cell to be retained before modality
-        alignment.
-    min_gene_cells
+        alignment in reference data.
+    spatial_min_cell_counts
+        Minimum total counts required for a cell to be retained before modality
+        alignment in spatial data.
+    ref_min_gene_cells
         Minimum number of cells in which a gene must be observed before being
-        retained before modality alignment.
+        retained before modality alignment in reference data.
+    spatial_min_gene_cells
+        Minimum number of cells in which a gene must be observed before being
+        retained before modality alignment in spatial data.
     gene_space
         ``"shared"`` subsets both modalities to common genes before
         normalization. ``"reference_all"`` preserves all reference genes while
@@ -116,8 +123,10 @@ def preprocess_nico_inputs(
         ref_out_dir=ref_out_dir,
         spatial_out_dir=spatial_out_dir,
         normalization=normalization,
-        min_cell_counts=min_cell_counts,
-        min_gene_cells=min_gene_cells,
+        ref_min_cell_counts=ref_min_cell_counts,
+        spatial_min_cell_counts=spatial_min_cell_counts,
+        ref_min_gene_cells=ref_min_gene_cells,
+        spatial_min_gene_cells=spatial_min_gene_cells,
         gene_space=gene_space,
         spatial_n_pcs=spatial_n_pcs,
         leiden_resolutions=leiden_resolutions,
@@ -127,7 +136,16 @@ def preprocess_nico_inputs(
     reference = sc.read_h5ad(reference_h5ad)
     spatial = sc.read_h5ad(spatial_h5ad)
 
-    source_layer = normalization.layer if isinstance(normalization, PearsonResidualsConfig) else None
+    source_layer = (
+        normalization.layer
+        if isinstance(normalization, PearsonResidualsConfig)
+        else None
+    )
+    source_layer = (
+        normalization.layer
+        if isinstance(normalization, PearsonResidualsConfig)
+        else None
+    )
     validate_normalization_layers(reference, spatial, normalization)
     validate_reference_adata(reference, ref_label_key=ref_label_key, layer=source_layer)
     validate_spatial_adata(spatial, spatial_key=spatial_key, layer=source_layer)
@@ -135,8 +153,16 @@ def preprocess_nico_inputs(
     reference = reference.copy()
     spatial = spatial.copy()
 
-    _filter_counts(reference, min_cell_counts=min_cell_counts, min_gene_cells=min_gene_cells)
-    _filter_counts(spatial, min_cell_counts=min_cell_counts, min_gene_cells=min_gene_cells)
+    _filter_counts(
+        reference,
+        min_cell_counts=ref_min_cell_counts,
+        min_gene_cells=ref_min_gene_cells,
+    )
+    _filter_counts(
+        spatial,
+        min_cell_counts=spatial_min_cell_counts,
+        min_gene_cells=spatial_min_gene_cells,
+    )
 
     validate_reference_adata(reference, ref_label_key=ref_label_key, layer=source_layer)
     validate_spatial_adata(spatial, spatial_key=spatial_key, layer=source_layer)
@@ -153,15 +179,27 @@ def preprocess_nico_inputs(
         "sct_spatial": spatial_out_dir / "sct_spatial.h5ad",
     }
 
-    original_counts = _make_original_counts(reference, make_reference_umap=make_reference_umap, random_state=random_state)
+    original_counts = _make_original_counts(
+        reference, make_reference_umap=make_reference_umap, random_state=random_state
+    )
     original_counts.write_h5ad(output_paths["original_counts"])
 
-    reference_common, spatial_common = _align_gene_space(reference, spatial, gene_space=gene_space)
+    reference_common, spatial_common = _align_gene_space(
+        reference, spatial, gene_space=gene_space
+    )
     # Re-filter after gene-space alignment. Some cells can pass whole-transcriptome
     # filtering but have too few/zero counts in the shared gene space, which can
     # make SCTransform/Pearson residual normalization unstable.
-    _filter_counts(reference_common, min_cell_counts=min_cell_counts, min_gene_cells=min_gene_cells)
-    _filter_counts(spatial_common, min_cell_counts=min_cell_counts, min_gene_cells=min_gene_cells)
+    _filter_counts(
+        reference_common,
+        min_cell_counts=ref_min_cell_counts,
+        min_gene_cells=ref_min_gene_cells,
+    )
+    _filter_counts(
+        spatial_common,
+        min_cell_counts=spatial_min_cell_counts,
+        min_gene_cells=spatial_min_gene_cells,
+    )
     validate_joint_adata(reference_common, spatial_common, gene_space=gene_space)
 
     reference_normalized, spatial_normalized = _normalize_modalities(
@@ -195,8 +233,10 @@ def _validate_preprocessing_arguments(
     ref_out_dir: str | Path,
     spatial_out_dir: str | Path,
     normalization: NormalizationConfig,
-    min_cell_counts: int,
-    min_gene_cells: int,
+    ref_min_cell_counts: int,
+    spatial_min_cell_counts: int,
+    ref_min_gene_cells: int,
+    spatial_min_gene_cells: int,
     gene_space: str,
     spatial_n_pcs: int,
     leiden_resolutions: Sequence[float],
@@ -205,10 +245,14 @@ def _validate_preprocessing_arguments(
     require_file(reference_h5ad, label="Reference h5ad file")
     require_file(spatial_h5ad, label="Spatial h5ad file")
     validate_normalization_config(normalization)
-    if min_cell_counts < 0:
-        raise ValidationError("min_cell_counts must be >= 0.")
-    if min_gene_cells < 0:
-        raise ValidationError("min_gene_cells must be >= 0.")
+    if (ref_min_cell_counts < 0) or (spatial_min_cell_counts < 0):
+        raise ValidationError(
+            "ref_min_cell_counts and spatial_min_cell_counts must be >= 0."
+        )
+    if (ref_min_gene_cells < 0) or (spatial_min_gene_cells < 0):
+        raise ValidationError(
+            "ref_min_gene_cells and spatial_min_gene_cells must be >= 0."
+        )
     if spatial_n_pcs <= 0:
         raise ValidationError("spatial_n_pcs must be > 0.")
     if not leiden_resolutions:
@@ -230,7 +274,9 @@ def _validate_preprocessing_arguments(
     )
 
 
-def _filter_counts(adata: AnnData, *, min_cell_counts: int, min_gene_cells: int) -> None:
+def _filter_counts(
+    adata: AnnData, *, min_cell_counts: int, min_gene_cells: int
+) -> None:
     if min_cell_counts > 0:
         sc.pp.filter_cells(adata, min_counts=min_cell_counts)
     if min_gene_cells > 0:
@@ -241,7 +287,9 @@ def _filter_counts(adata: AnnData, *, min_cell_counts: int, min_gene_cells: int)
         raise ValidationError("Filtering removed all genes.")
 
 
-def _make_original_counts(reference: AnnData, *, make_reference_umap: bool, random_state: int) -> AnnData:
+def _make_original_counts(
+    reference: AnnData, *, make_reference_umap: bool, random_state: int
+) -> AnnData:
     original_counts = reference.copy()
     original_counts.raw = original_counts.copy()
 
@@ -272,7 +320,9 @@ def _align_gene_space(
     *,
     gene_space: Literal["shared", "reference_all"],
 ) -> tuple[AnnData, AnnData]:
-    reference_gene_to_index = {gene: idx for idx, gene in enumerate(reference.var_names)}
+    reference_gene_to_index = {
+        gene: idx for idx, gene in enumerate(reference.var_names)
+    }
     spatial_indices: list[int] = []
     reference_indices: list[int] = []
     for spatial_idx, gene in enumerate(spatial.var_names):
@@ -282,7 +332,9 @@ def _align_gene_space(
             reference_indices.append(reference_idx)
 
     if not spatial_indices:
-        raise ValidationError("No shared genes found between reference and spatial data.")
+        raise ValidationError(
+            "No shared genes found between reference and spatial data."
+        )
 
     spatial_common = spatial[:, spatial_indices].copy()
     if gene_space == "shared":
@@ -303,10 +355,16 @@ def _normalize_modalities(
     spatial_key: str,
 ) -> tuple[AnnData, AnnData]:
     if isinstance(normalization, NiCoSCTransformConfig):
-        return _normalize_with_nico_sctransform(reference, spatial, normalization=normalization, spatial_key=spatial_key)
+        return _normalize_with_nico_sctransform(
+            reference, spatial, normalization=normalization, spatial_key=spatial_key
+        )
     if isinstance(normalization, PearsonResidualsConfig):
-        return _normalize_with_pearson_residuals(reference, spatial, normalization=normalization)
-    raise ValidationError(f"Unsupported normalization config type: {type(normalization).__name__}.")
+        return _normalize_with_pearson_residuals(
+            reference, spatial, normalization=normalization
+        )
+    raise ValidationError(
+        f"Unsupported normalization config type: {type(normalization).__name__}."
+    )
 
 
 def _normalize_with_nico_sctransform(
@@ -319,7 +377,9 @@ def _normalize_with_nico_sctransform(
     try:
         from nico import Annotations as sann
     except ImportError as exc:  # pragma: no cover - environment-specific fallback
-        raise ImportError("NiCo SCTransform normalization requires the 'nico' package.") from exc
+        raise ImportError(
+            "NiCo SCTransform normalization requires the 'nico' package."
+        ) from exc
 
     reference_raw = reference.copy()
     spatial_raw = spatial.copy()
@@ -367,7 +427,10 @@ def _normalize_with_pearson_residuals(
         reference_normalized.X = reference_normalized.layers[normalization.layer].copy()
         spatial_normalized.X = spatial_normalized.layers[normalization.layer].copy()
 
-    for adata, label in ((reference_normalized, "reference"), (spatial_normalized, "spatial")):
+    for adata, label in (
+        (reference_normalized, "reference"),
+        (spatial_normalized, "spatial"),
+    ):
         with warnings.catch_warnings():
             warnings.simplefilter("default")
             sc.experimental.pp.normalize_pearson_residuals(
@@ -379,8 +442,12 @@ def _normalize_with_pearson_residuals(
                 inplace=True,
             )
         if normalization.layer is not None:
-            adata.uns.setdefault("pearson_residuals_normalization", {})["source_layer"] = normalization.layer
-        adata.uns.setdefault("nico_wrapper_preprocess", {})["normalization"] = f"pearson_residuals:{label}"
+            adata.uns.setdefault("pearson_residuals_normalization", {})[
+                "source_layer"
+            ] = normalization.layer
+        adata.uns.setdefault("nico_wrapper_preprocess", {})["normalization"] = (
+            f"pearson_residuals:{label}"
+        )
 
     return reference_normalized, spatial_normalized
 
@@ -402,8 +469,9 @@ def _compute_spatial_embedding_and_clusters(
         )
 
 
-def _run_pca_neighbors_umap(adata: AnnData, *, requested_n_pcs: int, random_state: int) -> int:
-    n_comps = min(requested_n_pcs, adata.n_obs - 1, adata.n_vars - 1)
+def _run_pca_neighbors_umap(
+    adata: AnnData, *, requested_n_pcs: int, random_state: int
+) -> int:
     if n_comps < 1:
         raise ValidationError(
             "PCA requires at least two cells and two genes after filtering/alignment. "
