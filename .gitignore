@@ -9,5 +9,5 @@ wheels/
 # Virtual environments
 .venv
 
-#Directory with tested things
+#Directory with tested sanalyses / scripts, etc.
 tests/
