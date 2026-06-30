@@ -9,7 +9,7 @@ This directory contains worked examples that illustrate how to run the full `nic
 | `nico-wrapper_python_full_analysis.ipynb` | Python API | Interactive notebook covering the complete analysis pipeline using `nico-wrapper` Python functions. |
 | `nico-wrapper_full_analysis.sh` | CLI | Shell script running the full analysis end-to-end via CLI commands, including covariation reports and exports. SLURM-ready for HPC batch submission. |
 | `nico-wrapper_core_pipeline.sh` | CLI | Minimal shell script with just the four core pipeline steps (`nico-preprocess`, `nico-transfer`, `nico-niche`, `nico-covariation`). A lean starting point for scripted runs. |
-| `nico-wrapper_python_data_exploaration.ipynb` | CLI + Python API | Hybrid workflow: core pipeline steps are run via CLI commands, followed by interactive result exploration and plotting using Python API functions. |
+| `nico-wrapper_python_data_exploration.ipynb` | CLI + Python API | Hybrid workflow: core pipeline steps are run via CLI commands, followed by interactive result exploration and plotting using Python API functions. |
 
 ## Documentation
 
