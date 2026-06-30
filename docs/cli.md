@@ -198,8 +198,10 @@ Builds NiCo-ready reference and spatial files from raw `.h5ad` inputs.
 | `--normalization` | no | `nico-sctransform` | `nico-sctransform` or `pearson-residuals`. |
 | `--spatial-key` | no | `spatial` | Spatial coordinate key in `.obsm`. |
 | `--ref-label-key` | no | `cluster` | Reference label column in `.obs`. |
-| `--min-cell-counts` | no | `5` | Minimum total counts per retained cell. |
-| `--min-gene-cells` | no | `1` | Minimum cells per retained gene. |
+| `--ref_min-cell-counts` | no | `5` | Minimum total counts per retained cell in reference data. |
+| `--spatial_min-cell-counts` | no | `5` | Minimum total counts per retained cell in spatial data. |
+| `--ref_min-gene-cells` | no | `1` | Minimum cells per retained gene in reference data. |
+| `--spatial_min-gene-cells` | no | `1` | Minimum cells per retained gene in spatial data. |
 | `--gene-space` | no | `shared` | `shared` or `reference_all`. |
 | `--spatial-n-pcs` | no | `30` | PCs for spatial neighbor graph construction. |
 | `--leiden-resolution` | no | `0.4`, `0.5` | Leiden resolution. May be repeated. |
