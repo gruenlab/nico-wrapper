@@ -95,7 +95,30 @@ class NichePlotConfig:
 
 @dataclass(frozen=True)
 class ProximityConfig:
-    """Configuration for observed-vs-randomized cell-type proximity analysis."""
+    """Configuration for observed-vs-randomized cell-type proximity analysis.
+
+    Parameters
+    ----------
+    enabled
+        Whether proximity analysis should run as part of the main pipeline.
+    n_permutations
+        Number of random label permutations used to build the null distribution.
+    observed_threshold
+        Minimum observed value for a pair to be included in the output.
+    remove_self_pairs
+        Whether to exclude same cell-type pairs from the analysis.
+    as_counts
+        If ``True``, co-localisation is measured as raw cell counts; if
+        ``False``, proportions are used.
+    seed
+        Optional random seed for reproducible permutations.
+    saveas
+        Plot file extension, e.g. ``"pdf"`` or ``"png"``.
+    show
+        Whether to display the proximity plot inline (calls ``plt.show()``
+        via NiCo internally).  Set ``True`` when running in a Jupyter
+        notebook; keep ``False`` for non-interactive / CLI use.
+    """
 
     enabled: bool = False
     n_permutations: int = 1000
@@ -104,6 +127,7 @@ class ProximityConfig:
     as_counts: bool = True
     seed: int | None = None
     saveas: str = "pdf"
+    show: bool = False
 
 
 @dataclass(frozen=True)
