@@ -421,6 +421,7 @@ Generates plots from existing niche artifacts.
 | `--kind` | no | built-in defaults | Plot kind. May be repeated. |
 | `--plot-format` | no | `pdf` | Plot file format. |
 | `--interaction-cutoff` | no | `0.1` | Graph cutoff. |
+| `--choose-cell-type` | no | all cell types | Cell type to include in `top-coefficients` plots. May be repeated. |
 
 ### Minimal example
 

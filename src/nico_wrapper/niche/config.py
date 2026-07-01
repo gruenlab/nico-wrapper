@@ -77,6 +77,9 @@ class NichePlotConfig:
         Positive normalized coefficient cutoff used for graph-style plots.
     graph_edge_labels
         Whether graph plots should include edge-weight labels.
+    choose_celltypes
+        Cell types to plot for the ``"top-coefficients"`` kind. An empty tuple
+        (default) plots all cell types, matching the original NiCo behaviour.
     """
 
     enabled: bool = False
@@ -87,6 +90,7 @@ class NichePlotConfig:
     show: bool = False
     interaction_cutoff: float = 0.1
     graph_edge_labels: bool = False
+    choose_celltypes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

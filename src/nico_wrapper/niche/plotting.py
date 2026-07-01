@@ -99,6 +99,7 @@ def plot_niche_result(result: NicheInteractionResult, *, config: NichePlotConfig
     if "top-coefficients" in kinds:
         sint.find_interacting_cell_types(
             namespace,
+            choose_celltypes=list(config.choose_celltypes),
             celltype_niche_interaction_cutoff=config.interaction_cutoff,
             saveas=config.saveas,
             showit=config.show,
