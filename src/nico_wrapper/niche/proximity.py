@@ -47,7 +47,7 @@ def run_proximity_analysis(
         observed, ratio = sint.visualization_of_top_celltype_proximity_pairs(
             namespace,
             saveas=config.saveas,
-            showit=False,
+            showit=config.show,
             n_rand_permute=config.n_permutations,
             Observed_Threshold=config.observed_threshold,
             remove_self_pairs=config.remove_self_pairs,
