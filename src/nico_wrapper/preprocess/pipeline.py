@@ -472,6 +472,7 @@ def _compute_spatial_embedding_and_clusters(
 def _run_pca_neighbors_umap(
     adata: AnnData, *, requested_n_pcs: int, random_state: int
 ) -> int:
+    n_comps = min(requested_n_pcs, adata.n_obs - 1, adata.n_vars)
     if n_comps < 1:
         raise ValidationError(
             "PCA requires at least two cells and two genes after filtering/alignment. "

@@ -84,6 +84,8 @@ def resolve_ligand_receptor_db(path: str | Path | None = None) -> Path:
         package_path.parent / "utils" / "NiCoLRdb.txt",
         Path.cwd() / "NiCoLRdb.txt",
         Path.cwd() / "utils" / "NiCoLRdb.txt",
+        Path.cwd() / "resources" / "NiCoLRdb.txt",
+        Path(__file__).parent.parent.parent.parent / "resources" / "NiCoLRdb.txt",
     ]
 
     for candidate in candidates:

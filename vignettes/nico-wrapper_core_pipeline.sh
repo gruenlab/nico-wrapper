@@ -12,9 +12,6 @@ SPATIAL_H5AD="<path_to_spatial_data/spatial_data.h5ad>"
 #SPATIAL_KEY="spatial"    # .obsm key holding XY coordinates in the spatial file
 #REF_LABEL_KEY="cluster"    # .obs column holding cell-type labels in the reference data
 
-#Others
-LIGAND_RECEPTOR_DB="<path_to_LR_database>/NiCoLRdb.txt"
-
 uv run nico-preprocess build \
   --reference $REFERENCE_H5AD \
   --spatial $SPATIAL_H5AD \
@@ -32,5 +29,4 @@ uv run nico-niche run \
 uv run nico-covariation run \
   --output-dir nico_analysis \
   --ref-dir inputRef \
-  --spatial-dir inputQuery \
-  --ligand-receptor-db $LIGAND_RECEPTOR_DB
+  --spatial-dir inputQuery

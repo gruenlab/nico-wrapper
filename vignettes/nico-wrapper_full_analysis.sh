@@ -9,9 +9,6 @@
 REFERENCE_H5AD="<path_to_ref_data/scRNAseq_data.h5ad>"
 SPATIAL_H5AD="<path_to_spatial_data/spatial_data.h5ad>"
 
-# Path to the NiCoLRdb.txt ligand-receptor database.
-LIGAND_RECEPTOR_DB="<path_to_LR_database>/NiCoLRdb.txt"
-
 # ── Key column names ───────────────────────────────────────────────────────────
 # SPATIAL_KEY="spatial"   # .obsm key holding XY coordinates in the spatial file
 # REF_LABEL_KEY="cluster" # .obs column holding cell-type labels in the reference data
@@ -49,8 +46,7 @@ uv run nico-niche run \
 uv run nico-covariation run \
   --output-dir nico_analysis \
   --ref-dir inputRef \
-  --spatial-dir inputQuery \
-  --ligand-receptor-db $LIGAND_RECEPTOR_DB
+  --spatial-dir inputQuery
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
