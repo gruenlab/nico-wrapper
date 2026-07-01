@@ -222,6 +222,10 @@ def plot(
     kind: Annotated[Optional[list[str]], typer.Option("--kind", help="Plot kind. May be repeated.")] = None,
     plot_format: Annotated[str, typer.Option("--plot-format", help="Plot file format.")] = "pdf",
     interaction_cutoff: Annotated[float, typer.Option("--interaction-cutoff", help="Graph cutoff.")] = 0.1,
+    choose_cell_type: Annotated[
+        Optional[list[str]],
+        typer.Option("--choose-cell-type", help="Cell type to include in top-coefficients plot. May be repeated. Omit for all."),
+    ] = None,
 ) -> None:
     """Generate plots from existing niche artifacts."""
 
@@ -235,6 +239,7 @@ def plot(
                 kinds=tuple(kind) if kind else ("confusion", "coefficients", "scores", "graph"),
                 saveas=plot_format,
                 interaction_cutoff=interaction_cutoff,
+                choose_celltypes=tuple(choose_cell_type) if choose_cell_type else (),
             ),
         )
     except (ValidationError, ValueError) as exc:
