@@ -6,10 +6,8 @@ import warnings
 from pathlib import Path
 from typing import Literal, Sequence
 
-import numpy as np
 import scanpy as sc
 from anndata import AnnData
-from sklearn.metrics import adjusted_rand_score
 
 from .config import NiCoSCTransformConfig, NormalizationConfig, PearsonResidualsConfig
 from .validation import (
@@ -225,73 +223,6 @@ def preprocess_nico_inputs(
     spatial_normalized.write_h5ad(output_paths["sct_spatial"])
     validate_expected_files_exist(output_paths.values())
     return output_paths
-
-
-def _compute_mean_ari(
-    adata: AnnData,
-    leiden_resolution: float,
-    sampling_fraction: float,
-    n_samples: int,
-    rng: np.random.Generator,
-) -> float:
-    assert sampling_fraction > 0 and sampling_fraction <= 1, (
-        "sampling_fraction must be in (0, 1]"
-    )
-    adata_copy = adata
-    sc.tl.leiden(
-        adata_copy,
-        resolution=leiden_resolution,
-        copy=True,
-        key_added="labels_true",
-    )
-    ari_scores: list[float] = []
-    for _ in range(n_samples):
-        sampled_cell_indices = rng.choice(
-            adata_copy.n_obs,
-            size=int(adata_copy.n_obs * sampling_fraction),
-            replace=False,
-        )
-        sampled_adata = adata_copy[sampled_cell_indices].copy()
-        sc.pp.neighbors(sampled_adata)
-        sc.tl.leiden(
-            sampled_adata,
-            resolution=leiden_resolution,
-            copy=True,
-            key_added="labels_pred",
-        )
-        ari_scores.append(
-            adjusted_rand_score(
-                sampled_adata.obs["labels_true"].values,
-                sampled_adata.obs["labels_pred"].values,
-            )
-        )
-    return float(np.array(ari_scores).mean())
-
-
-def _find_leiden_resolution(
-    adata: AnnData,
-    start: float,
-    stop: float,
-    step: float,
-    n_samples: int,
-    sampling_fraction: float,
-    seed: int | None = None,
-) -> float:
-    rng = np.random.default_rng(seed)
-    resolutions = list(np.arange(start, stop + step, step))
-    ari_scores: list[float] = []
-    for resolution in resolutions:
-        ari_scores.append(
-            _compute_mean_ari(
-                adata,
-                resolution,
-                sampling_fraction,
-                n_samples,
-                rng,
-            )
-        )
-    best_idx = int(np.argmax(ari_scores))
-    return resolutions[best_idx]
 
 
 def _validate_preprocessing_arguments(
