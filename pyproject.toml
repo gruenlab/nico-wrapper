@@ -3,6 +3,8 @@ name = "nico-wrapper"
 version = "0.1.0"
 description = "A thin wrapper around NiCo adding an easy to use public API and command line tools to execute the NiCo pipeline."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Alexander Dallmann", email = "alexander.dallmann@uni-wuerzburg.de" }
 ]
@@ -40,5 +42,5 @@ nico-covariation = "nico_wrapper.covariation.cli:app"
 
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"

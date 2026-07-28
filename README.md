@@ -57,4 +57,6 @@ nico-covariation    Run latent-factor covariation analysis and reports
 
 ## License and citation
 
-See this repository's license for wrapper code. For the underlying method and implementation, follow the citation guidance of upstream NiCo / `nico-sc-sp`.
+`nico-wrapper` is licensed under the [MIT License](https://github.com/gruenlab/nico-wrapper/blob/main/LICENSE).
+
+NiCo is used as an external library dependency. For the underlying method and implementation, follow the citation guidance of upstream NiCo / `nico-sc-sp`.
