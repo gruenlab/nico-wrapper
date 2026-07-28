@@ -28,23 +28,36 @@ When you need methodological details, cite or consult NiCo. When you need a stru
 
 ## Documentation
 
-- [Installation](docs/install.md)
-- [CLI usage](docs/cli.md)
-- [Python API](docs/api.md)
+- [Installation](https://github.com/gruenlab/nico-wrapper/blob/main/docs/install.md)
+- [CLI usage](https://github.com/gruenlab/nico-wrapper/blob/main/docs/cli.md)
+- [Python API](https://github.com/gruenlab/nico-wrapper/blob/main/docs/api.md)
+
+## Installation
+
+Version 1.0.0 supports Python 3.11 on Linux.
+
+```bash
+uv venv --python 3.11
+uv pip install nico-wrapper
+source .venv/bin/activate
+```
+
+Alternatively, install into an existing Python 3.11 environment:
+
+```bash
+python -m pip install nico-wrapper
+```
 
 ## Quick start
 
 ```bash
-uv venv --python 3.11
-uv sync
-
-uv run nico-preprocess --help
-uv run nico-transfer --help
-uv run nico-niche --help
-uv run nico-covariation --help
+nico-preprocess --help
+nico-transfer --help
+nico-niche --help
+nico-covariation --help
 ```
 
-A minimal end-to-end CLI skeleton is documented in [CLI usage](docs/cli.md#recommended-minimal-workflow).
+A minimal end-to-end CLI skeleton is documented in [CLI usage](https://github.com/gruenlab/nico-wrapper/blob/main/docs/cli.md#recommended-minimal-workflow).
 
 ## Main command groups
 
@@ -59,4 +72,10 @@ nico-covariation    Run latent-factor covariation analysis and reports
 
 `nico-wrapper` is licensed under the [MIT License](https://github.com/gruenlab/nico-wrapper/blob/main/LICENSE).
 
-NiCo is used as an external library dependency. For the underlying method and implementation, follow the citation guidance of upstream NiCo / `nico-sc-sp`.
+NiCo is used as an external library dependency. When using this wrapper, cite the upstream NiCo method:
+
+> Agrawal A, Thomann S, Basu S, Grün D. NiCo identifies extrinsic drivers of cell state modulation by niche covariation analysis. *Nature Communications*. 2024;15:10628. [doi:10.1038/s41467-024-54973-w](https://doi.org/10.1038/s41467-024-54973-w).
+
+## Contributors
+
+See [CONTRIBUTORS.md](https://github.com/gruenlab/nico-wrapper/blob/main/CONTRIBUTORS.md).
