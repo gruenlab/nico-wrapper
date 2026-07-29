@@ -199,7 +199,7 @@ Builds NiCo-ready reference and spatial files from raw `.h5ad` inputs.
 | `--spatial-key` | no | `spatial` | Spatial coordinate key in `.obsm`. |
 | `--ref-label-key` | no | `cluster` | Reference label column in `.obs`. |
 | `--ref_min-cell-counts` | no | `5` | Minimum total counts per retained cell in reference data. |
-| `--spatial_min-cell-counts` | no | `5` | Minimum total counts per retained cell in spatial data. |
+| `--min-cell-counts` | no | `5` | Minimum total counts per retained cell in spatial data. |
 | `--ref_min-gene-cells` | no | `1` | Minimum cells per retained gene in reference data. |
 | `--spatial_min-gene-cells` | no | `1` | Minimum cells per retained gene in spatial data. |
 | `--gene-space` | no | `shared` | `shared` or `reference_all`. |

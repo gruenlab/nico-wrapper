@@ -79,8 +79,14 @@ only-include = [
     "pyproject.toml",
 ]
 
+[tool.hatch.build.targets.sdist.force-include]
+"resources/NiCoLRdb.txt" = "resources/NiCoLRdb.txt"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/nico_wrapper"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"resources/NiCoLRdb.txt" = "nico_wrapper/resources/NiCoLRdb.txt"
 
 [build-system]
 requires = ["hatchling>=1.27"]
