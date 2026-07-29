@@ -56,15 +56,6 @@ nico-covariation = "nico_wrapper.covariation.cli:app"
 [tool.hatch.build]
 skip-excluded-dirs = true
 exclude = [
-    "/.pi-subagents",
-    "/.pytest_cache",
-    "/.ruff_cache",
-    "/.uv-cache",
-    "/.venv",
-    "/build",
-    "/dev-samples",
-    "/dist",
-    "/scripts",
     "**/__pycache__",
     "*.h5ad",
 ]
