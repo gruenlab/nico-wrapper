@@ -141,11 +141,6 @@ def preprocess_nico_inputs(
         if isinstance(normalization, PearsonResidualsConfig)
         else None
     )
-    source_layer = (
-        normalization.layer
-        if isinstance(normalization, PearsonResidualsConfig)
-        else None
-    )
     validate_normalization_layers(reference, spatial, normalization)
     validate_reference_adata(reference, ref_label_key=ref_label_key, layer=source_layer)
     validate_spatial_adata(spatial, spatial_key=spatial_key, layer=source_layer)
@@ -157,11 +152,13 @@ def preprocess_nico_inputs(
         reference,
         min_cell_counts=ref_min_cell_counts,
         min_gene_cells=ref_min_gene_cells,
+        layer=source_layer,
     )
     _filter_counts(
         spatial,
         min_cell_counts=spatial_min_cell_counts,
         min_gene_cells=spatial_min_gene_cells,
+        layer=source_layer,
     )
 
     validate_reference_adata(reference, ref_label_key=ref_label_key, layer=source_layer)
@@ -194,11 +191,13 @@ def preprocess_nico_inputs(
         reference_common,
         min_cell_counts=ref_min_cell_counts,
         min_gene_cells=ref_min_gene_cells,
+        layer=source_layer,
     )
     _filter_counts(
         spatial_common,
         min_cell_counts=spatial_min_cell_counts,
         min_gene_cells=spatial_min_gene_cells,
+        layer=source_layer,
     )
     validate_joint_adata(reference_common, spatial_common, gene_space=gene_space)
 
@@ -275,12 +274,35 @@ def _validate_preprocessing_arguments(
 
 
 def _filter_counts(
-    adata: AnnData, *, min_cell_counts: int, min_gene_cells: int
+    adata: AnnData,
+    *,
+    min_cell_counts: int,
+    min_gene_cells: int,
+    layer: str | None = None,
 ) -> None:
-    if min_cell_counts > 0:
-        sc.pp.filter_cells(adata, min_counts=min_cell_counts)
-    if min_gene_cells > 0:
-        sc.pp.filter_genes(adata, min_cells=min_gene_cells)
+    if layer is None:
+        if min_cell_counts > 0:
+            sc.pp.filter_cells(adata, min_counts=min_cell_counts)
+        if min_gene_cells > 0:
+            sc.pp.filter_genes(adata, min_cells=min_gene_cells)
+    else:
+        if min_cell_counts > 0:
+            cell_mask, n_counts = sc.pp.filter_cells(
+                adata.layers[layer],
+                min_counts=min_cell_counts,
+                inplace=False,
+            )
+            adata.obs["n_counts"] = n_counts
+            adata._inplace_subset_obs(cell_mask)
+        if min_gene_cells > 0:
+            gene_mask, n_cells = sc.pp.filter_genes(
+                adata.layers[layer],
+                min_cells=min_gene_cells,
+                inplace=False,
+            )
+            adata.var["n_cells"] = n_cells
+            adata._inplace_subset_var(gene_mask)
+
     if adata.n_obs == 0:
         raise ValidationError("Filtering removed all cells.")
     if adata.n_vars == 0:
