@@ -177,7 +177,10 @@ def preprocess_nico_inputs(
     }
 
     original_counts = _make_original_counts(
-        reference, make_reference_umap=make_reference_umap, random_state=random_state
+        reference,
+        source_layer=source_layer,
+        make_reference_umap=make_reference_umap,
+        random_state=random_state,
     )
     original_counts.write_h5ad(output_paths["original_counts"])
 
@@ -310,9 +313,15 @@ def _filter_counts(
 
 
 def _make_original_counts(
-    reference: AnnData, *, make_reference_umap: bool, random_state: int
+    reference: AnnData,
+    *,
+    source_layer: str | None,
+    make_reference_umap: bool,
+    random_state: int,
 ) -> AnnData:
     original_counts = reference.copy()
+    if source_layer is not None:
+        original_counts.X = original_counts.layers[source_layer].copy()
     original_counts.raw = original_counts.copy()
 
     if make_reference_umap:
@@ -442,12 +451,13 @@ def _normalize_with_pearson_residuals(
 ) -> tuple[AnnData, AnnData]:
     reference_normalized = reference.copy()
     spatial_normalized = spatial.copy()
-    reference_normalized.raw = reference.copy()
-    spatial_normalized.raw = spatial.copy()
 
     if normalization.layer is not None:
         reference_normalized.X = reference_normalized.layers[normalization.layer].copy()
         spatial_normalized.X = spatial_normalized.layers[normalization.layer].copy()
+
+    reference_normalized.raw = reference_normalized.copy()
+    spatial_normalized.raw = spatial_normalized.copy()
 
     for adata, label in (
         (reference_normalized, "reference"),
