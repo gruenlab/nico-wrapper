@@ -1,6 +1,10 @@
 # Installation
 
-`nico-wrapper` 1.0.0 supports **Python 3.11 on Linux**. The project metadata declares `>=3.11,<3.12`.
+Version 1.0.0 supports Python 3.11 on Linux.
+
+## Install `uv`
+
+The `uvx`, `uv tool`, and `uv` virtual-environment options below require `uv`. Install it with Homebrew, your system package manager, or the official standalone installer. See the [`uv` installation documentation](https://docs.astral.sh/uv/getting-started/installation/) for all available methods.
 
 ## Run directly with `uvx`
 
@@ -18,18 +22,33 @@ uvx --python 3.11 nico-wrapper covariation --help
 
 ## Install from PyPI
 
-With `uv`:
+### Install as a persistent command with `uv`
+
+Install `nico-wrapper` as a persistent command-line tool:
+
+```bash
+uv tool install --python 3.11 nico-wrapper
+nico-wrapper --help
+```
+
+### Install in a project environment with `uv`
+
+Create and activate a project-local virtual environment, then install the package:
 
 ```bash
 uv venv --python 3.11
-uv pip install nico-wrapper
 source .venv/bin/activate
+uv pip install nico-wrapper
+nico-wrapper --help
 ```
 
-Or install into an existing Python 3.11 environment:
+### Install with `pip`
+
+Install into an existing Python 3.11 environment:
 
 ```bash
 python -m pip install nico-wrapper
+nico-wrapper --help
 ```
 
 Check the installed umbrella or standalone commands:
