@@ -33,7 +33,7 @@ When you need methodological details, cite or consult NiCo. When you need a stru
 
 ## Installation
 
-Version 1.0.0 supports Python 3.11 on Linux.
+Version 1.0.0 supports Python 3.11 on Linux and macOS.
 
 ### 1. Install uv
 
@@ -95,15 +95,15 @@ The [`vignettes/`](https://github.com/gruenlab/nico-wrapper/tree/main/vignettes)
 
 | Goal | Start here |
 |---|---|
-| Run the minimal CLI workflow | [Core CLI pipeline](vignettes/nico-wrapper_core_pipeline.sh) |
-| Run the complete CLI analysis with exports and plots | [Full CLI analysis](vignettes/nico-wrapper_full_analysis.sh) |
-| Work interactively through the full Python API | [Full Python workflow](vignettes/nico-wrapper_python_full_analysis.ipynb) |
-| Explore results from an existing run | [Interactive result exploration](vignettes/nico-wrapper_python_data_exploration.ipynb) |
-| Use existing spatial cell-type annotations | [Starting from pre-annotated spatial data](vignettes/starting_from_annotated_spatial.md) |
+| Run the minimal CLI workflow | [Core CLI pipeline](https://github.com/gruenlab/nico-wrapper/blob/main/vignettes/nico-wrapper_core_pipeline.sh) |
+| Run the complete CLI analysis with exports and plots | [Full CLI analysis](https://github.com/gruenlab/nico-wrapper/blob/main/vignettes/nico-wrapper_full_analysis.sh) |
+| Work interactively through the full Python API | [Full Python workflow](https://github.com/gruenlab/nico-wrapper/blob/main/vignettes/nico-wrapper_python_full_analysis.ipynb) |
+| Explore results from an existing run | [Interactive result exploration](https://github.com/gruenlab/nico-wrapper/blob/main/vignettes/nico-wrapper_python_data_exploration.ipynb) |
+| Use existing spatial cell-type annotations | [Starting from pre-annotated spatial data](https://github.com/gruenlab/nico-wrapper/blob/main/vignettes/starting_from_annotated_spatial.md) |
 
 New CLI users should begin with the **core pipeline**, which covers preprocessing, label transfer, niche analysis, and covariation analysis. The full CLI example adds exports, diagnostic plots, proximity analysis, covariation reports, ligand–receptor analysis, and pathway enrichment.
 
-See the [CLI documentation](docs/cli.md) for command options and the [Python API documentation](docs/api.md) for programmatic usage.
+See the [CLI documentation](https://github.com/gruenlab/nico-wrapper/blob/main/docs/cli.md) for command options and the [Python API documentation](https://github.com/gruenlab/nico-wrapper/blob/main/docs/api.md) for programmatic usage.
 
 ## License and citation
 

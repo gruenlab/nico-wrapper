@@ -1,6 +1,6 @@
 # Installation
 
-Version 1.0.0 supports Python 3.11 on Linux.
+Version 1.0.0 supports Python 3.11 on Linux and macOS.
 
 ## Install `uv`
 
@@ -89,13 +89,13 @@ or run commands from the repository through `uv run`.
 
 ## Requirements
 
-- Linux
+- Linux or macOS
 - Python 3.11
 - `uv` for the source-development workflow
 - a working C/C++ build toolchain if a scientific dependency has no compatible wheel
 - the upstream `nico-sc-sp==1.6.0` package, installed automatically
 
-Most dependencies should install from wheels on supported Python 3.11 Linux systems. System package names vary by distribution if a local build is required.
+Most dependencies should install from wheels on supported Python 3.11 Linux and macOS systems. System package names vary by platform if a local build is required.
 
 ## NiCo dependency
 
@@ -177,7 +177,7 @@ uv venv --python 3.11
 uv sync
 ```
 
-If no wheel exists for your Linux distribution, install its standard compiler toolchain and the development libraries named by the failing package, then retry.
+If no wheel exists for your platform, install the required build tools and retry. On Linux, install the distribution's standard compiler toolchain and the development libraries named by the failing package. On macOS, install the Xcode Command Line Tools with `xcode-select --install`.
 
 ### CLI command not found
 
