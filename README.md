@@ -2,6 +2,8 @@
 
 `nico-wrapper` provides Python APIs and Typer command-line tools for running the main NiCo ([`nico-sc-sp`](https://github.com/ankitbioinfo/nico_tutorial)) workflow on reference single-cell RNA-seq data and spatial/Xenium query data.
 
+[`nico-wrapper`](https://github.com/gruenlab/nico-wrapper) is being developed at the [Grün Lab](https://www.med.uni-wuerzburg.de/en/systemimmunologie/research/quantitative-single-cell-biology-of-the-immune-system-gruen-lab/) at the Institute for Systems Immunology under the leadership of Dominic Grün.
+
 It covers the practical pipeline around NiCo:
 
 1. preprocessing raw reference and spatial data into NiCo-ready AnnData files;
@@ -76,25 +78,32 @@ uvx --python 3.11 nico-wrapper niche --help
 uvx --python 3.11 nico-wrapper covariation --help
 ```
 
-After installation, the original standalone commands remain available:
-
-```bash
-nico-preprocess --help
-nico-transfer --help
-nico-niche --help
-nico-covariation --help
-```
-
 A minimal end-to-end CLI skeleton is documented in [CLI usage](https://github.com/gruenlab/nico-wrapper/blob/main/docs/cli.md#recommended-minimal-workflow).
 
 ## Main command groups
 
-| Umbrella command | Standalone command | Purpose |
-|---|---|---|
-| `nico-wrapper preprocess` | `nico-preprocess` | Convert/build NiCo-ready reference and spatial inputs |
-| `nico-wrapper transfer` | `nico-transfer` | Transfer reference labels onto spatial/query cells |
-| `nico-wrapper niche` | `nico-niche` | Run spatial niche interaction analysis |
-| `nico-wrapper covariation` | `nico-covariation` | Run latent-factor covariation analysis and reports |
+| Command | Purpose |
+|---|---|
+| `nico-wrapper preprocess` | Convert/build NiCo-ready reference and spatial inputs |
+| `nico-wrapper transfer` | Transfer reference labels onto spatial/query cells |
+| `nico-wrapper niche` | Run spatial niche interaction analysis |
+| `nico-wrapper covariation` | Run latent-factor covariation analysis and reports |
+
+## Vignettes: start here
+
+The [`vignettes/`](https://github.com/gruenlab/nico-wrapper/tree/main/vignettes) directory contains worked examples for different starting points:
+
+| Goal | Start here |
+|---|---|
+| Run the minimal CLI workflow | [Core CLI pipeline](vignettes/nico-wrapper_core_pipeline.sh) |
+| Run the complete CLI analysis with exports and plots | [Full CLI analysis](vignettes/nico-wrapper_full_analysis.sh) |
+| Work interactively through the full Python API | [Full Python workflow](vignettes/nico-wrapper_python_full_analysis.ipynb) |
+| Explore results from an existing run | [Interactive result exploration](vignettes/nico-wrapper_python_data_exploration.ipynb) |
+| Use existing spatial cell-type annotations | [Starting from pre-annotated spatial data](vignettes/starting_from_annotated_spatial.md) |
+
+New CLI users should begin with the **core pipeline**, which covers preprocessing, label transfer, niche analysis, and covariation analysis. The full CLI example adds exports, diagnostic plots, proximity analysis, covariation reports, ligand–receptor analysis, and pathway enrichment.
+
+See the [CLI documentation](docs/cli.md) for command options and the [Python API documentation](docs/api.md) for programmatic usage.
 
 ## License and citation
 

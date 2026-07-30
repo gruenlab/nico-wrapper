@@ -47,6 +47,7 @@ Documentation = "https://github.com/gruenlab/nico-wrapper/tree/main/docs"
 Issues = "https://github.com/gruenlab/nico-wrapper/issues"
 
 [project.scripts]
+nico-wrapper = "nico_wrapper.cli:app"
 nico-preprocess = "nico_wrapper.preprocess.cli:app"
 nico-transfer = "nico_wrapper.transfer.cli:app"
 nico-niche = "nico_wrapper.niche.cli:app"

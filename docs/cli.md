@@ -1,13 +1,28 @@
 # CLI usage
 
-Run commands from the repository root with `uv run` unless your `.venv` is activated.
+From PyPI, run the umbrella CLI directly with `uvx`:
 
 ```bash
+uvx --python 3.11 nico-wrapper --help
+uvx --python 3.11 nico-wrapper preprocess --help
+uvx --python 3.11 nico-wrapper transfer --help
+uvx --python 3.11 nico-wrapper niche --help
+uvx --python 3.11 nico-wrapper covariation --help
+```
+
+If your default interpreter is already Python 3.11, you can omit `--python 3.11`.
+
+From the repository root, use `uv run` unless your `.venv` is activated:
+
+```bash
+uv run nico-wrapper --help
 uv run nico-preprocess --help
 uv run nico-transfer --help
 uv run nico-niche --help
 uv run nico-covariation --help
 ```
+
+The umbrella and standalone interfaces execute the same Typer applications. The standalone command names remain supported.
 
 ## Overall workflow
 
@@ -57,18 +72,26 @@ Final outputs
 
 ## General patterns
 
+Use either the umbrella interface:
+
 ```bash
-uv run <command-group> <command> [OPTIONS]
+uvx --python 3.11 nico-wrapper <group> <command> [OPTIONS]
 ```
 
-Command groups:
+or an installed/source-checkout standalone command:
 
-```text
-nico-preprocess     Prepare NiCo-ready input files
-nico-transfer       Transfer reference labels onto spatial cells
-nico-niche          Run and inspect niche interaction analysis
-nico-covariation    Run and inspect covariation analysis and reports
+```bash
+uv run <standalone-command> <command> [OPTIONS]
 ```
+
+The command groups map directly onto the existing standalone commands:
+
+| Umbrella command | Standalone command | Purpose |
+|---|---|---|
+| `nico-wrapper preprocess` | `nico-preprocess` | Prepare NiCo-ready input files |
+| `nico-wrapper transfer` | `nico-transfer` | Transfer reference labels onto spatial cells |
+| `nico-wrapper niche` | `nico-niche` | Run and inspect niche interaction analysis |
+| `nico-wrapper covariation` | `nico-covariation` | Run and inspect covariation analysis and reports |
 
 Default paths used throughout the examples:
 

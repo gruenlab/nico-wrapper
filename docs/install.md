@@ -2,6 +2,20 @@
 
 `nico-wrapper` 1.0.0 supports **Python 3.11 on Linux**. The project metadata declares `>=3.11,<3.12`.
 
+## Run directly with `uvx`
+
+Run the package without creating or activating an environment:
+
+```bash
+uvx --python 3.11 nico-wrapper --help
+uvx --python 3.11 nico-wrapper preprocess --help
+uvx --python 3.11 nico-wrapper transfer --help
+uvx --python 3.11 nico-wrapper niche --help
+uvx --python 3.11 nico-wrapper covariation --help
+```
+
+`uvx` installs and caches the package in an isolated environment. The explicit Python request makes `uv` select or download Python 3.11. If your default interpreter is already Python 3.11, you can omit `--python 3.11`. Only `uv` must be installed beforehand.
+
 ## Install from PyPI
 
 With `uv`:
@@ -18,9 +32,10 @@ Or install into an existing Python 3.11 environment:
 python -m pip install nico-wrapper
 ```
 
-Check the installed commands:
+Check the installed umbrella or standalone commands:
 
 ```bash
+nico-wrapper --help
 nico-preprocess --help
 nico-transfer --help
 nico-niche --help
@@ -101,6 +116,7 @@ When working from a source checkout without activating the environment, prefix t
 Equivalent module entry points are also available:
 
 ```bash
+python -m nico_wrapper.cli --help
 python -m nico_wrapper.preprocess.cli --help
 python -m nico_wrapper.transfer.cli --help
 python -m nico_wrapper.niche.cli --help

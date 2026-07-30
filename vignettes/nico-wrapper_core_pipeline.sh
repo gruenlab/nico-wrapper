@@ -12,21 +12,21 @@ SPATIAL_H5AD="<path_to_spatial_data/spatial_data.h5ad>"
 #SPATIAL_KEY="spatial"    # .obsm key holding XY coordinates in the spatial file
 #REF_LABEL_KEY="cluster"    # .obs column holding cell-type labels in the reference data
 
-uv run nico-preprocess build \
+uv run nico-wrapper preprocess build \
   --reference $REFERENCE_H5AD \
   --spatial $SPATIAL_H5AD \
   --ref-out-dir inputRef \
   --spatial-out-dir inputQuery
 
-uv run nico-transfer run \
+uv run nico-wrapper transfer run \
   --ref-dir inputRef \
   --spatial-dir inputQuery \
   --output-dir nico_analysis
 
-uv run nico-niche run \
+uv run nico-wrapper niche run \
   --output-dir nico_analysis
 
-uv run nico-covariation run \
+uv run nico-wrapper covariation run \
   --output-dir nico_analysis \
   --ref-dir inputRef \
   --spatial-dir inputQuery
