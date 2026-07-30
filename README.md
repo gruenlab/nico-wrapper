@@ -1,9 +1,6 @@
 # nico-wrapper
 
-> [!WARNING]
-> This is a proof-of-concept wrapper around NiCo. It can change at any moment, may contain bugs, and should not be treated as a stable production interface.
-
-`nico-wrapper` provides Python APIs and Typer command-line tools for running the main NiCo (`nico-sc-sp`) workflow on reference single-cell RNA-seq data and spatial/Xenium query data.
+`nico-wrapper` provides Python APIs and Typer command-line tools for running the main NiCo ([`nico-sc-sp`](https://github.com/ankitbioinfo/nico_tutorial)) workflow on reference single-cell RNA-seq data and spatial/Xenium query data.
 
 It covers the practical pipeline around NiCo:
 
@@ -14,7 +11,7 @@ It covers the practical pipeline around NiCo:
 
 ## Relationship to NiCo
 
-This project is a wrapper around the upstream [`nico-sc-sp`](https://pypi.org/project/nico-sc-sp/) package, not a replacement for NiCo and not a fork of the NiCo method.
+This project is a wrapper around the upstream [`nico-sc-sp`](https://github.com/ankitbioinfo/nico_tutorial) package, not a replacement for NiCo and not a fork of the NiCo method.
 
 NiCo still performs the core scientific computations, including anchor discovery, label propagation, niche interaction modeling, and covariation analysis. `nico-wrapper` adds:
 
@@ -36,19 +33,50 @@ When you need methodological details, cite or consult NiCo. When you need a stru
 
 Version 1.0.0 supports Python 3.11 on Linux.
 
+### 1. Install uv
+
+Install `uv` with Homebrew, your system package manager, or the official standalone installer. See the [`uv` installation documentation](https://docs.astral.sh/uv/getting-started/installation/) for the available methods.
+
+### 2. Run nico-wrapper with uvx
+
+Run `nico-wrapper` directly in an isolated environment without installing it permanently:
+
 ```bash
-uv venv --python 3.11
-uv pip install nico-wrapper
-source .venv/bin/activate
+uvx --python 3.11 nico-wrapper --help
+uvx --python 3.11 nico-wrapper preprocess --help
 ```
 
-Alternatively, install into an existing Python 3.11 environment:
+`uvx` installs and caches the package. The explicit Python request makes `uv` select or download Python 3.11; if your default interpreter is already Python 3.11, you can omit `--python 3.11`.
+
+### 3. Install nico-wrapper
+
+Install `nico-wrapper` as a persistent command-line tool:
 
 ```bash
-python -m pip install nico-wrapper
+uv tool install --python 3.11 nico-wrapper
+nico-wrapper --help
+```
+
+Alternatively, install it in a project-local virtual environment:
+
+```bash
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install nico-wrapper
 ```
 
 ## Quick start
+
+With `uvx`, use the umbrella command groups:
+
+```bash
+uvx --python 3.11 nico-wrapper preprocess --help
+uvx --python 3.11 nico-wrapper transfer --help
+uvx --python 3.11 nico-wrapper niche --help
+uvx --python 3.11 nico-wrapper covariation --help
+```
+
+After installation, the original standalone commands remain available:
 
 ```bash
 nico-preprocess --help
@@ -61,12 +89,12 @@ A minimal end-to-end CLI skeleton is documented in [CLI usage](https://github.co
 
 ## Main command groups
 
-```text
-nico-preprocess     Convert/build NiCo-ready reference and spatial inputs
-nico-transfer       Transfer reference labels onto spatial/query cells
-nico-niche          Run spatial niche interaction analysis
-nico-covariation    Run latent-factor covariation analysis and reports
-```
+| Umbrella command | Standalone command | Purpose |
+|---|---|---|
+| `nico-wrapper preprocess` | `nico-preprocess` | Convert/build NiCo-ready reference and spatial inputs |
+| `nico-wrapper transfer` | `nico-transfer` | Transfer reference labels onto spatial/query cells |
+| `nico-wrapper niche` | `nico-niche` | Run spatial niche interaction analysis |
+| `nico-wrapper covariation` | `nico-covariation` | Run latent-factor covariation analysis and reports |
 
 ## License and citation
 
