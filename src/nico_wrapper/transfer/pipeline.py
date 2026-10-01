@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterable
 import os
+from pathlib import Path
+from typing import Iterable, assert_never
 
+import numpy as np
+import scanpy as sc
 from anndata import read_h5ad
+from anndata.typing import AnnData
+from sklearn.metrics import adjusted_rand_score
 
 from .config import (
     AnchorConfig,
@@ -14,6 +18,7 @@ from .config import (
     AnnotationConfig,
     AnnotationResult,
     LabelTransferConfig,
+    LeidenFinetuning,
     TieStrategy,
     TransferOutputs,
 )
@@ -74,7 +79,11 @@ def run_label_transfer(
     )
 
     resolved_output_dir = Path(output_dir)
-    resolved_annotation_dir = Path(annotation_dir) if annotation_dir is not None else resolved_output_dir / "annotations"
+    resolved_annotation_dir = (
+        Path(annotation_dir)
+        if annotation_dir is not None
+        else resolved_output_dir / "annotations"
+    )
     _ensure_directory(resolved_output_dir, label="output_dir")
     _ensure_directory(resolved_annotation_dir, label="annotation_dir")
 
@@ -151,11 +160,21 @@ def find_anchors(
     ref_dir = Path(ref_dir)
     spatial_dir = Path(spatial_dir)
     output_dir = Path(output_dir)
-    resolved_annotation_dir = Path(annotation_dir) if annotation_dir is not None else output_dir / "annotations"
+    resolved_annotation_dir = (
+        Path(annotation_dir)
+        if annotation_dir is not None
+        else output_dir / "annotations"
+    )
 
-    sc_full_path = require_file(ref_dir / config.sc_full_filename, label="Full/original reference AnnData")
-    sc_sct_path = require_file(ref_dir / config.sc_sct_filename, label="Normalized reference AnnData")
-    spatial_sct_path = require_file(spatial_dir / config.spatial_sct_filename, label="Normalized spatial AnnData")
+    sc_full_path = require_file(
+        ref_dir / config.sc_full_filename, label="Full/original reference AnnData"
+    )
+    sc_sct_path = require_file(
+        ref_dir / config.sc_sct_filename, label="Normalized reference AnnData"
+    )
+    spatial_sct_path = require_file(
+        spatial_dir / config.spatial_sct_filename, label="Normalized spatial AnnData"
+    )
     _validate_anchor_shapes(
         sc_full_path=sc_full_path,
         sc_sct_path=sc_sct_path,
@@ -170,7 +189,9 @@ def find_anchors(
     anchors_npz = resolved_annotation_dir / f"anchors_data_{config.neighbors}.npz"
     final_sct_sc = resolved_annotation_dir / "final_sct_sc.h5ad"
     final_sct_sp = resolved_annotation_dir / "final_sct_sp.h5ad"
-    validate_output_files([anchors_npz, final_sct_sc, final_sct_sp], overwrite=overwrite)
+    validate_output_files(
+        [anchors_npz, final_sct_sc, final_sct_sp], overwrite=overwrite
+    )
 
     try:
         from nico import Annotations as sann
@@ -191,8 +212,12 @@ def find_anchors(
     )
 
     _require_created_file(anchors_npz, label="NiCo anchors file")
-    _require_created_file(final_sct_sc, label="NiCo final normalized reference intermediate")
-    _require_created_file(final_sct_sp, label="NiCo final normalized spatial intermediate")
+    _require_created_file(
+        final_sct_sc, label="NiCo final normalized reference intermediate"
+    )
+    _require_created_file(
+        final_sct_sp, label="NiCo final normalized spatial intermediate"
+    )
 
     return AnchorResult(
         nico_result=nico_result,
@@ -200,6 +225,71 @@ def find_anchors(
         annotation_dir=resolved_annotation_dir,
         anchors_npz=anchors_npz,
     )
+
+
+def _compute_mean_ari(
+    adata: AnnData,
+    leiden_resolution: float,
+    sampling_fraction: float,
+    n_samples: int,
+    rng: np.random.Generator,
+) -> float:
+    assert sampling_fraction > 0 and sampling_fraction <= 1, (
+        "sampling_fraction must be in (0, 1]"
+    )
+    adata_copy = adata
+    sc.tl.leiden(
+        adata_copy,
+        resolution=leiden_resolution,
+        key_added="labels_true",
+    )
+    ari_scores: list[float] = []
+    for _ in range(n_samples):
+        sampled_cell_indices = rng.choice(
+            adata_copy.n_obs,
+            size=int(adata_copy.n_obs * sampling_fraction),
+            replace=False,
+        )
+        sampled_adata = adata_copy[sampled_cell_indices].copy()
+        sc.pp.neighbors(sampled_adata)
+        sc.tl.leiden(
+            sampled_adata,
+            resolution=leiden_resolution,
+            key_added="labels_pred",
+        )
+        ari_scores.append(
+            adjusted_rand_score(
+                sampled_adata.obs["labels_true"].values,
+                sampled_adata.obs["labels_pred"].values,
+            )
+        )
+    return float(np.array(ari_scores).mean())
+
+
+def _find_leiden_resolution(
+    adata: AnnData,
+    start: float,
+    stop: float,
+    step: float,
+    n_samples: int,
+    sampling_fraction: float,
+    seed: int | None = None,
+) -> float:
+    rng = np.random.default_rng(seed)
+    resolutions = list(np.arange(start, stop + step, step))
+    ari_scores: list[float] = []
+    for resolution in resolutions:
+        ari_scores.append(
+            _compute_mean_ari(
+                adata,
+                resolution,
+                sampling_fraction,
+                n_samples,
+                rng,
+            )
+        )
+    best_idx = int(np.argmax(ari_scores))
+    return resolutions[best_idx]
 
 
 def transfer_labels(
@@ -223,20 +313,46 @@ def transfer_labels(
         per-iteration annotation CSV files.
     """
 
-    validate_label_transfer_config(LabelTransferConfig(anchors=AnchorConfig(), annotation=config))
+    validate_label_transfer_config(
+        LabelTransferConfig(anchors=AnchorConfig(), annotation=config)
+    )
 
     try:
         from nico import Annotations as sann
     except ImportError as exc:  # pragma: no cover - environment-specific
         raise ImportError("NiCo label transfer requires the 'nico' package.") from exc
 
+    match spatial_cluster_key := config.spatial_cluster_key:
+        case LeidenFinetuning.MAX_ADJUSTED_RAND:
+            best_resolution = _find_leiden_resolution(
+                adata=anchors.nico_result.adata_query,
+                start=0.1,
+                stop=2.0,
+                step=0.1,
+                n_samples=10,
+                sampling_fraction=0.8,
+                seed=42,
+            )
+            resolved_spatial_cluster_key = f"finetuned_leiden_{best_resolution}"
+            sc.tl.leiden(
+                anchors.nico_result.adata_query,
+                resolution=best_resolution,
+                key_added=resolved_spatial_cluster_key,
+            )
+        case str():
+            resolved_spatial_cluster_key = spatial_cluster_key
+        case _:
+            assert_never(spatial_cluster_key)
+
     nico_result = sann.nico_based_annotation(
         anchors.nico_result,
         ref_cluster_tag=config.ref_label_key,
         across_spatial_clusters_dispersion_cutoff=config.dispersion_cutoff,
-        guiding_spatial_cluster_resolution_tag=config.spatial_cluster_key,
+        guiding_spatial_cluster_resolution_tag=resolved_spatial_cluster_key,
         number_of_iteration_to_perform_celltype_annotations=config.iterations,
-        resolved_tie_issue_with_weighted_nearest_neighbor=_tie_strategy_for_nico(config.tie_strategy),
+        resolved_tie_issue_with_weighted_nearest_neighbor=_tie_strategy_for_nico(
+            config.tie_strategy
+        ),
     )
 
     iteration_cluster_csvs = tuple(
@@ -253,7 +369,9 @@ def transfer_labels(
     if not hasattr(nico_result, "nico_cluster"):
         raise RuntimeError("NiCo annotation did not produce a 'nico_cluster' result.")
     if not hasattr(nico_result, "ad_sp_ori"):
-        raise RuntimeError("NiCo annotation did not return the annotated spatial AnnData object ('ad_sp_ori').")
+        raise RuntimeError(
+            "NiCo annotation did not return the annotated spatial AnnData object ('ad_sp_ori')."
+        )
 
     return AnnotationResult(
         nico_result=nico_result,
@@ -299,14 +417,20 @@ def save_transfer_result(
     if not isinstance(output_label_key, str) or not output_label_key.strip():
         raise ValidationError("output_label_key must be a non-empty string.")
 
-    resolved_output_dir = Path(output_dir) if output_dir is not None else annotation.output_dir
+    resolved_output_dir = (
+        Path(output_dir) if output_dir is not None else annotation.output_dir
+    )
     _ensure_directory(resolved_output_dir, label="output_dir")
     output_path = resolved_output_dir / output_h5ad_name
     validate_output_files([output_path], overwrite=overwrite)
 
     nico_result = annotation.nico_result
-    if not hasattr(nico_result, "ad_sp_ori") or not hasattr(nico_result, "nico_cluster"):
-        raise RuntimeError("AnnotationResult does not contain NiCo spatial annotations to save.")
+    if not hasattr(nico_result, "ad_sp_ori") or not hasattr(
+        nico_result, "nico_cluster"
+    ):
+        raise RuntimeError(
+            "AnnotationResult does not contain NiCo spatial annotations to save."
+        )
 
     adata = nico_result.ad_sp_ori.copy()
     if output_label_key in adata.obs and not overwrite:
@@ -326,7 +450,9 @@ def save_transfer_result(
 
 
 def _validate_anchor_config(config: AnchorConfig) -> None:
-    validate_label_transfer_config(LabelTransferConfig(anchors=config, annotation=AnnotationConfig()))
+    validate_label_transfer_config(
+        LabelTransferConfig(anchors=config, annotation=AnnotationConfig())
+    )
 
 
 def _ensure_directory(path: Path, *, label: str) -> None:
@@ -382,7 +508,9 @@ def _validate_anchor_shapes(
 
     shared_genes = sc_sct.var_names.intersection(spatial_sct.var_names)
     if len(shared_genes) == 0:
-        raise ValidationError("Normalized reference and spatial AnnData files share no genes.")
+        raise ValidationError(
+            "Normalized reference and spatial AnnData files share no genes."
+        )
     max_pcs = min(sc_sct.n_obs, len(shared_genes)) - 1
     if n_pcs > max_pcs:
         raise ValidationError(
@@ -393,7 +521,9 @@ def _validate_anchor_shapes(
 
 
 def _tie_strategy_for_nico(tie_strategy: TieStrategy | str) -> str:
-    value = tie_strategy.value if isinstance(tie_strategy, TieStrategy) else tie_strategy
+    value = (
+        tie_strategy.value if isinstance(tie_strategy, TieStrategy) else tie_strategy
+    )
     if value == TieStrategy.MAJORITY.value:
         return "No"
     if value == TieStrategy.WEIGHTED.value:
@@ -450,4 +580,6 @@ def _validate_plain_output_filename(value: str, *, label: str) -> None:
         raise ValidationError(f"{label} must be a non-empty file name.")
     path = Path(value)
     if path.is_absolute() or path.name != value:
-        raise ValidationError(f"{label} must be a plain file name, not a path: {value!r}.")
+        raise ValidationError(
+            f"{label} must be a plain file name, not a path: {value!r}."
+        )

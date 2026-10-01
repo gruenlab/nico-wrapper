@@ -279,7 +279,7 @@ Transfers labels from preprocessed reference cells onto preprocessed spatial/que
 | `--output-dir` | yes | none | Output directory for transfer outputs. |
 | `--annotation-dir` | no | `<output-dir>/annotations` | Directory for annotation intermediates. |
 | `--ref-label-key` | no | `cluster` | Reference `.obs` label column. |
-| `--spatial-cluster-key` | no | `leiden0.5` | Spatial guide cluster column. |
+| `--spatial-cluster-key` | no | `leiden0.5` | Spatial guide cluster column or "max_adjusted_rand" for automated finetuning. |
 | `--neighbors` | no | `50` | K for MNN anchors and spatial KNN graph. |
 | `--n-pcs` | no | `50` | PCs for the transfer space. |
 | `--minkowski-order` | no | `2` | Minkowski distance order; `2` is Euclidean. |

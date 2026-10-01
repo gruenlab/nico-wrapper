@@ -7,7 +7,7 @@ from typing import Annotated, Optional
 
 import typer
 
-from .config import AnchorConfig, AnnotationConfig, LabelTransferConfig, TieStrategy
+from .config import AnchorConfig, AnnotationConfig, LabelTransferConfig, LeidenFinetuning, TieStrategy
 from .pipeline import run_label_transfer
 
 app = typer.Typer(
@@ -90,6 +90,9 @@ def run(
     ] = False,
 ) -> None:
     """Run label transfer on outputs produced by nico-preprocess."""
+
+    if spatial_cluster_key == "max_adjusted_rand":
+        spatial_cluster_key = LeidenFinetuning.MAX_ADJUSTED_RAND
 
     config = LabelTransferConfig(
         anchors=AnchorConfig(

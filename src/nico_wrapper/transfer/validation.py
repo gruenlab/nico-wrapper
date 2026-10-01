@@ -7,15 +7,15 @@ AnnData objects, create directories, or write output files.
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Sequence
-import warnings
 
-from anndata import AnnData, read_h5ad
 import numpy as np
+from anndata import AnnData, read_h5ad
 from scipy import sparse
 
-from .config import LabelTransferConfig, TieStrategy
+from .config import LabelTransferConfig, LeidenFinetuning, TieStrategy
 
 
 class ValidationError(ValueError):
@@ -33,7 +33,9 @@ def require_file(path: str | Path, *, label: str = "file") -> Path:
     return resolved
 
 
-def validate_output_files(paths: Sequence[str | Path], *, overwrite: bool = False) -> None:
+def validate_output_files(
+    paths: Sequence[str | Path], *, overwrite: bool = False
+) -> None:
     """Validate output file paths before writing.
 
     Parameters
@@ -47,10 +49,14 @@ def validate_output_files(paths: Sequence[str | Path], *, overwrite: bool = Fals
     for raw_path in paths:
         path = Path(raw_path)
         if path.exists() and not overwrite:
-            raise ValidationError(f"Output file already exists: {path}. Use overwrite=True to replace it.")
+            raise ValidationError(
+                f"Output file already exists: {path}. Use overwrite=True to replace it."
+            )
         parent = path.parent if path.parent != Path("") else Path(".")
         if parent.exists() and not parent.is_dir():
-            raise ValidationError(f"Output parent exists but is not a directory: {parent}")
+            raise ValidationError(
+                f"Output parent exists but is not a directory: {parent}"
+            )
 
 
 def validate_label_transfer_config(config: LabelTransferConfig) -> None:
@@ -65,7 +71,9 @@ def validate_label_transfer_config(config: LabelTransferConfig) -> None:
     annotation = config.annotation
 
     if anchors.neighbors < 2:
-        raise ValidationError("neighbors must be >= 2 because NiCo expects iterable KNN results.")
+        raise ValidationError(
+            "neighbors must be >= 2 because NiCo expects iterable KNN results."
+        )
     if anchors.n_pcs <= 0:
         raise ValidationError("n_pcs must be > 0.")
     if anchors.minkowski_order < 1:
@@ -84,7 +92,11 @@ def validate_label_transfer_config(config: LabelTransferConfig) -> None:
         raise ValidationError("dispersion_cutoff must be between 0 and 1.")
     if annotation.iterations < 1:
         raise ValidationError("iterations must be >= 1.")
-    tie_strategy = annotation.tie_strategy.value if isinstance(annotation.tie_strategy, TieStrategy) else annotation.tie_strategy
+    tie_strategy = (
+        annotation.tie_strategy.value
+        if isinstance(annotation.tie_strategy, TieStrategy)
+        else annotation.tie_strategy
+    )
     if tie_strategy not in {TieStrategy.MAJORITY.value, TieStrategy.WEIGHTED.value}:
         raise ValidationError("tie_strategy must be 'majority' or 'weighted'.")
 
@@ -136,19 +148,31 @@ def validate_label_transfer_inputs(
     ref_dir = Path(ref_dir)
     spatial_dir = Path(spatial_dir)
     output_dir = Path(output_dir)
-    resolved_annotation_dir = Path(annotation_dir) if annotation_dir is not None else output_dir / "annotations"
+    resolved_annotation_dir = (
+        Path(annotation_dir)
+        if annotation_dir is not None
+        else output_dir / "annotations"
+    )
 
     _validate_directory_path(ref_dir, label="ref_dir", must_exist=True)
     _validate_directory_path(spatial_dir, label="spatial_dir", must_exist=True)
     _validate_directory_path(output_dir, label="output_dir", must_exist=False)
-    _validate_directory_path(resolved_annotation_dir, label="annotation_dir", must_exist=False)
+    _validate_directory_path(
+        resolved_annotation_dir, label="annotation_dir", must_exist=False
+    )
 
     anchors = config.anchors
     annotation = config.annotation
 
-    sc_full_path = require_file(ref_dir / anchors.sc_full_filename, label="Full/original reference AnnData")
-    sc_sct_path = require_file(ref_dir / anchors.sc_sct_filename, label="Normalized reference AnnData")
-    spatial_sct_path = require_file(spatial_dir / anchors.spatial_sct_filename, label="Normalized spatial AnnData")
+    sc_full_path = require_file(
+        ref_dir / anchors.sc_full_filename, label="Full/original reference AnnData"
+    )
+    sc_sct_path = require_file(
+        ref_dir / anchors.sc_sct_filename, label="Normalized reference AnnData"
+    )
+    spatial_sct_path = require_file(
+        spatial_dir / anchors.spatial_sct_filename, label="Normalized spatial AnnData"
+    )
 
     planned_outputs = _planned_output_files(
         output_dir=output_dir,
@@ -181,7 +205,9 @@ def validate_label_transfer_inputs(
     )
 
 
-def validate_full_reference_adata(adata: AnnData, *, ref_label_key: str = "cluster") -> None:
+def validate_full_reference_adata(
+    adata: AnnData, *, ref_label_key: str = "cluster"
+) -> None:
     """Validate ``Original_counts.h5ad`` for label transfer.
 
     The reference labels must be present and safe for NiCo's manual CSV-writing
@@ -192,15 +218,21 @@ def validate_full_reference_adata(adata: AnnData, *, ref_label_key: str = "clust
     _validate_matrix(adata.X, label="Full/original reference .X")
 
     if ref_label_key not in adata.obs:
-        raise ValidationError(f"Full/original reference .obs is missing label column: {ref_label_key!r}.")
+        raise ValidationError(
+            f"Full/original reference .obs is missing label column: {ref_label_key!r}."
+        )
 
     labels = adata.obs[ref_label_key]
     if labels.isna().any():
-        raise ValidationError(f"Reference label column {ref_label_key!r} contains missing values.")
+        raise ValidationError(
+            f"Reference label column {ref_label_key!r} contains missing values."
+        )
 
     label_values = labels.astype(str)
     if (label_values.str.len() == 0).any():
-        raise ValidationError(f"Reference label column {ref_label_key!r} contains empty labels.")
+        raise ValidationError(
+            f"Reference label column {ref_label_key!r} contains empty labels."
+        )
 
     reserved = {"NM", "xxxx"}
     observed_reserved = sorted(reserved.intersection(set(label_values)))
@@ -210,7 +242,9 @@ def validate_full_reference_adata(adata: AnnData, *, ref_label_key: str = "clust
         )
 
     if label_values.str.contains("_a#d_", regex=False).any():
-        raise ValidationError(f"Reference labels may not contain NiCo's internal delimiter '_a#d_'.")
+        raise ValidationError(
+            f"Reference labels may not contain NiCo's internal delimiter '_a#d_'."
+        )
     if label_values.str.contains(r"[,\r\n]", regex=True).any():
         raise ValidationError(
             f"Reference labels may not contain commas or newlines because NiCo writes annotation CSVs manually."
@@ -229,7 +263,7 @@ def validate_normalized_reference_adata(adata: AnnData) -> None:
 def validate_normalized_spatial_adata(
     adata: AnnData,
     *,
-    spatial_cluster_key: str = "leiden0.5",
+    spatial_cluster_key: str | LeidenFinetuning = "leiden0.5",
     output_label_key: str = "nico_ct",
     overwrite: bool = False,
 ) -> None:
@@ -240,18 +274,29 @@ def validate_normalized_spatial_adata(
     if not _matrix_has_nonzero(adata.X):
         raise ValidationError("Normalized spatial .X contains no nonzero values.")
 
-    if spatial_cluster_key not in adata.obs:
-        raise ValidationError(f"Normalized spatial .obs is missing guide cluster column: {spatial_cluster_key!r}.")
-
-    clusters = adata.obs[spatial_cluster_key]
-    if clusters.isna().any():
-        raise ValidationError(f"Spatial guide cluster column {spatial_cluster_key!r} contains missing values.")
-    try:
-        sorted(list(np.unique(clusters.to_numpy())))
-    except TypeError as exc:
-        raise ValidationError(
-            f"Spatial guide cluster column {spatial_cluster_key!r} contains values that NiCo cannot sort."
-        ) from exc
+    match spatial_cluster_key:
+        case LeidenFinetuning():
+            pass
+        case str():
+            if spatial_cluster_key not in adata.obs:
+                raise ValidationError(
+                    f"Normalized spatial .obs is missing guide cluster column: {spatial_cluster_key!r}."
+                )
+            clusters = adata.obs[spatial_cluster_key]
+            if clusters.isna().any():
+                raise ValidationError(
+                    f"Spatial guide cluster column {spatial_cluster_key!r} contains missing values."
+                )
+            try:
+                sorted(list(np.unique(clusters.to_numpy())))
+            except TypeError as exc:
+                raise ValidationError(
+                    f"Spatial guide cluster column {spatial_cluster_key!r} contains values that NiCo cannot sort."
+                ) from exc
+        case _:
+            raise ValidationError(
+                f"Invalid spatial_cluster_key type: {type(spatial_cluster_key)}"
+            )
 
     if output_label_key in adata.obs and not overwrite:
         raise ValidationError(
@@ -292,7 +337,9 @@ def validate_joint_transfer_adata(
 
     shared_genes = sc_sct.var_names.intersection(spatial_sct.var_names)
     if len(shared_genes) == 0:
-        raise ValidationError("Normalized reference and spatial AnnData files share no genes.")
+        raise ValidationError(
+            "Normalized reference and spatial AnnData files share no genes."
+        )
 
     max_pcs = min(sc_sct.n_obs, len(shared_genes)) - 1
     if n_pcs > max_pcs:
@@ -303,9 +350,13 @@ def validate_joint_transfer_adata(
         )
 
     if not _shared_gene_matrix_has_nonzero(sc_sct, shared_genes):
-        raise ValidationError("Normalized reference has no nonzero values in the shared gene space.")
+        raise ValidationError(
+            "Normalized reference has no nonzero values in the shared gene space."
+        )
     if not _shared_gene_matrix_has_nonzero(spatial_sct, shared_genes):
-        raise ValidationError("Normalized spatial data has no nonzero values in the shared gene space.")
+        raise ValidationError(
+            "Normalized spatial data has no nonzero values in the shared gene space."
+        )
 
     if warn_dense_memory_gb is not None:
         estimated_bytes = (sc_sct.n_obs + spatial_sct.n_obs) * len(shared_genes) * 8
@@ -356,12 +407,20 @@ def _validate_plain_filename(value: str, *, label: str) -> None:
         raise ValidationError(f"{label} must be a non-empty file name.")
     path = Path(value)
     if path.is_absolute() or path.name != value:
-        raise ValidationError(f"{label} must be a plain file name, not a path: {value!r}.")
+        raise ValidationError(
+            f"{label} must be a plain file name, not a path: {value!r}."
+        )
 
 
-def _validate_nonempty_key(value: str, *, label: str) -> None:
-    if not isinstance(value, str) or not value.strip():
-        raise ValidationError(f"{label} must be a non-empty string.")
+def _validate_nonempty_key(value: str | LeidenFinetuning, *, label: str) -> None:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        and not isinstance(value, LeidenFinetuning)
+    ):
+        raise ValidationError(
+            f"{label} must be a non-empty string or a valid LeidenFinetuning value."
+        )
 
 
 def _read_h5ad(path: Path, *, label: str) -> AnnData:
@@ -389,7 +448,9 @@ def _validate_basic_adata(adata: AnnData, *, label: str) -> None:
 def _validate_matrix(matrix: object, *, label: str) -> None:
     if sparse.issparse(matrix):
         if not np.issubdtype(matrix.dtype, np.number):
-            raise ValidationError(f"{label} must have a numeric dtype; found {matrix.dtype}.")
+            raise ValidationError(
+                f"{label} must have a numeric dtype; found {matrix.dtype}."
+            )
         if not np.isfinite(matrix.data).all():
             raise ValidationError(f"{label} contains NaN or infinite values.")
         return
@@ -398,7 +459,9 @@ def _validate_matrix(matrix: object, *, label: str) -> None:
     if array.ndim != 2:
         raise ValidationError(f"{label} must be a 2D matrix.")
     if not np.issubdtype(array.dtype, np.number):
-        raise ValidationError(f"{label} must have a numeric dtype; found {array.dtype}.")
+        raise ValidationError(
+            f"{label} must have a numeric dtype; found {array.dtype}."
+        )
     if not np.isfinite(array).all():
         raise ValidationError(f"{label} contains NaN or infinite values.")
 
@@ -409,7 +472,9 @@ def _matrix_has_nonzero(matrix: object) -> bool:
     return bool(np.any(np.asarray(matrix) != 0))
 
 
-def _shared_gene_matrix_has_nonzero(adata: AnnData, shared_genes: Sequence[str]) -> bool:
+def _shared_gene_matrix_has_nonzero(
+    adata: AnnData, shared_genes: Sequence[str]
+) -> bool:
     indices = adata.var_names.get_indexer(shared_genes)
     if np.any(indices < 0):
         return False
@@ -420,7 +485,9 @@ def _shared_gene_matrix_has_nonzero(adata: AnnData, shared_genes: Sequence[str])
 def _validate_spatial_coordinates(adata: AnnData, *, spatial_key: str) -> None:
     coords = np.asarray(adata.obsm[spatial_key])
     if coords.ndim != 2:
-        raise ValidationError(f"Spatial coordinates .obsm[{spatial_key!r}] must be a 2D matrix.")
+        raise ValidationError(
+            f"Spatial coordinates .obsm[{spatial_key!r}] must be a 2D matrix."
+        )
     if coords.shape[0] != adata.n_obs:
         raise ValidationError(
             f"Spatial coordinates row count ({coords.shape[0]}) does not match number of cells ({adata.n_obs})."

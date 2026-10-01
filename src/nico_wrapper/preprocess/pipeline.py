@@ -6,7 +6,6 @@ import warnings
 from pathlib import Path
 from typing import Literal, Sequence
 
-import numpy as np
 import scanpy as sc
 from anndata import AnnData
 

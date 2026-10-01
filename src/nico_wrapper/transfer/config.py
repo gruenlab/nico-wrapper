@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any
+
+
+class LeidenFinetuning(StrEnum):
+    MAX_ADJUSTED_RAND = "max_adjusted_rand"
 
 
 class TieStrategy(str, Enum):
@@ -60,7 +64,7 @@ class AnnotationConfig:
     spatial_cluster_key
         Column in ``sct_spatial.h5ad.obs`` containing spatial guide clusters.
         NiCo uses this to prune noisy anchors and constrain propagation. The
-        default follows NiCo's own default.
+        default follows NiCo's own default. Alternatively the Clustering is generated on the fly with a finetuned resolution
     dispersion_cutoff
         Cutoff used by NiCo when pruning anchors distributed across spatial
         clusters.
@@ -78,7 +82,7 @@ class AnnotationConfig:
     """
 
     ref_label_key: str = "cluster"
-    spatial_cluster_key: str = "leiden0.5"
+    spatial_cluster_key: str | LeidenFinetuning = "leiden0.5"
     dispersion_cutoff: float = 0.15
     iterations: int = 3
     tie_strategy: TieStrategy = TieStrategy.MAJORITY
