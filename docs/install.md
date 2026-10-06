@@ -1,6 +1,6 @@
 # Installation
 
-Version 1.0.0 supports Python 3.11 on Linux and macOS.
+Version 1.0.0 supports Python 3.12 on Linux and macOS.
 
 ## Install `uv`
 
@@ -11,14 +11,14 @@ The `uvx`, `uv tool`, and `uv` virtual-environment options below require `uv`. I
 Run the package without creating or activating an environment:
 
 ```bash
-uvx --python 3.11 nico-wrapper --help
-uvx --python 3.11 nico-wrapper preprocess --help
-uvx --python 3.11 nico-wrapper transfer --help
-uvx --python 3.11 nico-wrapper niche --help
-uvx --python 3.11 nico-wrapper covariation --help
+uvx --python 3.12 nico-wrapper --help
+uvx --python 3.12 nico-wrapper preprocess --help
+uvx --python 3.12 nico-wrapper transfer --help
+uvx --python 3.12 nico-wrapper niche --help
+uvx --python 3.12 nico-wrapper covariation --help
 ```
 
-`uvx` installs and caches the package in an isolated environment. The explicit Python request makes `uv` select or download Python 3.11. If your default interpreter is already Python 3.11, you can omit `--python 3.11`. Only `uv` must be installed beforehand.
+`uvx` installs and caches the package in an isolated environment. The explicit Python request makes `uv` select or download Python 3.12. If your default interpreter is already Python 3.12, you can omit `--python 3.12`. Only `uv` must be installed beforehand.
 
 ## Install from PyPI
 
@@ -27,7 +27,7 @@ uvx --python 3.11 nico-wrapper covariation --help
 Install `nico-wrapper` as a persistent command-line tool:
 
 ```bash
-uv tool install --python 3.11 nico-wrapper
+uv tool install --python 3.12 nico-wrapper
 nico-wrapper --help
 ```
 
@@ -36,7 +36,7 @@ nico-wrapper --help
 Create and activate a project-local virtual environment, then install the package:
 
 ```bash
-uv venv --python 3.11
+uv venv --python 3.12
 source .venv/bin/activate
 uv pip install nico-wrapper
 nico-wrapper --help
@@ -44,7 +44,7 @@ nico-wrapper --help
 
 ### Install with `pip`
 
-Install into an existing Python 3.11 environment:
+Install into an existing Python 3.12 environment:
 
 ```bash
 python -m pip install nico-wrapper
@@ -75,7 +75,7 @@ git clone https://github.com/gruenlab/nico-wrapper.git
 cd nico-wrapper
 
 # Create the supported environment and install the locked dependencies
-uv venv --python 3.11
+uv venv --python 3.12
 uv sync
 ```
 
@@ -90,19 +90,19 @@ or run commands from the repository through `uv run`.
 ## Requirements
 
 - Linux or macOS
-- Python 3.11
+- Python 3.12
 - `uv` for the source-development workflow
 - a working C/C++ build toolchain if a scientific dependency has no compatible wheel
-- the upstream `nico-sc-sp==1.6.0` package, installed automatically
+- the upstream `nico-sc-sp==1.8.0` package, installed automatically
 
-Most dependencies should install from wheels on supported Python 3.11 Linux and macOS systems. System package names vary by platform if a local build is required.
+Most dependencies should install from wheels on supported Python 3.12 Linux and macOS systems. System package names vary by platform if a local build is required.
 
 ## NiCo dependency
 
 This project depends on the upstream `nico-sc-sp` package through `pyproject.toml`:
 
 ```text
-nico-sc-sp==1.6.0
+nico-sc-sp==1.8.0
 ```
 
 You do not need to clone NiCo separately. The wrapper calls upstream NiCo modules internally, including:
@@ -173,7 +173,7 @@ With `uv`, recreate the environment if necessary:
 
 ```bash
 rm -rf .venv
-uv venv --python 3.11
+uv venv --python 3.12
 uv sync
 ```
 

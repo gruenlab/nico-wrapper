@@ -3,14 +3,14 @@
 From PyPI, run the umbrella CLI directly with `uvx`:
 
 ```bash
-uvx --python 3.11 nico-wrapper --help
-uvx --python 3.11 nico-wrapper preprocess --help
-uvx --python 3.11 nico-wrapper transfer --help
-uvx --python 3.11 nico-wrapper niche --help
-uvx --python 3.11 nico-wrapper covariation --help
+uvx --python 3.12 nico-wrapper --help
+uvx --python 3.12 nico-wrapper preprocess --help
+uvx --python 3.12 nico-wrapper transfer --help
+uvx --python 3.12 nico-wrapper niche --help
+uvx --python 3.12 nico-wrapper covariation --help
 ```
 
-If your default interpreter is already Python 3.11, you can omit `--python 3.11`.
+If your default interpreter is already Python 3.12, you can omit `--python 3.12`.
 
 From the repository root, use `uv run` unless your `.venv` is activated:
 
@@ -75,7 +75,7 @@ Final outputs
 Use either the umbrella interface:
 
 ```bash
-uvx --python 3.11 nico-wrapper <group> <command> [OPTIONS]
+uvx --python 3.12 nico-wrapper <group> <command> [OPTIONS]
 ```
 
 or an installed/source-checkout standalone command:
@@ -763,7 +763,7 @@ uv run nico-covariation feature-matrix --output-dir nico_analysis
 
 ## `nico-covariation colocalize`
 
-Plots colocalized central/neighbor factor loadings.
+Plots colocalized central/neighbor factor loadings. With NiCo 1.8.0, the scatterplot uses neighbor loadings on the x-axis and central loadings on the y-axis, shows colocalized and non-colocalized central cells, and fits the regression across all central cells. Bar and violin plots compare colocalized and non-colocalized loadings for both cell types.
 
 ### Parameters
 

@@ -519,7 +519,7 @@ def plot_colocalized_factors(
     state = require_nico_covariation_state(result)
     output_dir = result.covariation_dir / "colocalization"
     before = _snapshot(output_dir, config.saveas)
-    output_cc, output_nc, nc_not_colocalized = scov.visualization_of_colocalized_celltype_factors_as_scatterplot(
+    output_cc, output_nc, cc_not_colocalized, nc_not_colocalized = scov.visualization_of_colocalized_celltype_factors_as_scatterplot(
         state,
         CC_name=central_cell_type,
         NC_name=neighbor_cell_type,
@@ -539,6 +539,7 @@ def plot_colocalized_factors(
             NC_factor_id=neighbor_factor_id,
             CC_unique_colocalized_loadings=output_cc[1],
             NC_unique_colocalized_loadings=output_nc[1],
+            CC_not_colocalized_loadings=cc_not_colocalized,
             NC_not_colocalized_loadings=nc_not_colocalized,
             visualize_as="BarPlot",
             saveas=config.saveas,
@@ -555,6 +556,7 @@ def plot_colocalized_factors(
             NC_factor_id=neighbor_factor_id,
             CC_unique_colocalized_loadings=output_cc[1],
             NC_unique_colocalized_loadings=output_nc[1],
+            CC_not_colocalized_loadings=cc_not_colocalized,
             NC_not_colocalized_loadings=nc_not_colocalized,
             visualize_as="ViolinPlot",
             saveas=config.saveas,

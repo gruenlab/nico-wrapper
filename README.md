@@ -33,7 +33,7 @@ When you need methodological details, cite or consult NiCo. When you need a stru
 
 ## Installation
 
-Version 1.0.0 supports Python 3.11 on Linux and macOS.
+Version 1.0.0 supports Python 3.12 on Linux and macOS.
 
 ### 1. Install uv
 
@@ -44,25 +44,25 @@ Install `uv` with Homebrew, your system package manager, or the official standal
 Run `nico-wrapper` directly in an isolated environment without installing it permanently:
 
 ```bash
-uvx --python 3.11 nico-wrapper --help
-uvx --python 3.11 nico-wrapper preprocess --help
+uvx --python 3.12 nico-wrapper --help
+uvx --python 3.12 nico-wrapper preprocess --help
 ```
 
-`uvx` installs and caches the package. The explicit Python request makes `uv` select or download Python 3.11; if your default interpreter is already Python 3.11, you can omit `--python 3.11`.
+`uvx` installs and caches the package. The explicit Python request makes `uv` select or download Python 3.12; if your default interpreter is already Python 3.12, you can omit `--python 3.12`.
 
 ### 3. Install nico-wrapper
 
 Install `nico-wrapper` as a persistent command-line tool:
 
 ```bash
-uv tool install --python 3.11 nico-wrapper
+uv tool install --python 3.12 nico-wrapper
 nico-wrapper --help
 ```
 
 Alternatively, install it in a project-local virtual environment:
 
 ```bash
-uv venv --python 3.11
+uv venv --python 3.12
 source .venv/bin/activate
 uv pip install nico-wrapper
 ```
@@ -72,10 +72,10 @@ uv pip install nico-wrapper
 With `uvx`, use the umbrella command groups:
 
 ```bash
-uvx --python 3.11 nico-wrapper preprocess --help
-uvx --python 3.11 nico-wrapper transfer --help
-uvx --python 3.11 nico-wrapper niche --help
-uvx --python 3.11 nico-wrapper covariation --help
+uvx --python 3.12 nico-wrapper preprocess --help
+uvx --python 3.12 nico-wrapper transfer --help
+uvx --python 3.12 nico-wrapper niche --help
+uvx --python 3.12 nico-wrapper covariation --help
 ```
 
 A minimal end-to-end CLI skeleton is documented in [CLI usage](https://github.com/gruenlab/nico-wrapper/blob/main/docs/cli.md#recommended-minimal-workflow).
