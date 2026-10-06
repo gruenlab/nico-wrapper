@@ -776,6 +776,7 @@ Plots colocalized central/neighbor factor loadings. With NiCo 1.8.0, the scatter
 | `--neighbor-factor-id` | yes | none | Neighbor factor ID. |
 | `--radius` | no | `0` | Radius tag/value. |
 | `--n-factors` | no | `3` | Number of latent factors. |
+| `--axis-log-scale / --no-axis-log-scale` | no | no axis log scale | Use log-scaled axes in the scatter plot. |
 | `--bar / --no-bar` | no | bar | Also create bar plot. |
 | `--violin / --no-violin` | no | no violin | Also create violin plot. |
 | `--plot-format` | no | `pdf` | Plot file format. |
