@@ -700,7 +700,7 @@ Runs optional pathway enrichment from covariation factors. This may require Enri
 | `--factor-id` | no | all | Restrict to selected factors. May be repeated. |
 | `--top-genes` | no | `50` | Top genes per factor for enrichment. |
 | `--database` | no | GO/BioPlanet/Reactome defaults | Enrichr database. May be repeated. |
-| `--organism` | no | `Mouse` | `Mouse` or `Human`. |
+| `--organism` | no | `mouse` | `mouse` or `human` (lowercase). |
 | `--plot-as` | no | `barplot` | `barplot` or `dotplot`. |
 | `--plot-format` | no | `pdf` | Plot file format. |
 | `--show / --no-show` | no | no show | Keep figures open. |

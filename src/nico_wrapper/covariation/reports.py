@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
+from types import FunctionType, SimpleNamespace
 from typing import Any, Literal
 
 import pandas as pd
@@ -312,7 +313,7 @@ def extract_top_genes(
         choose_factor_id=factor_id,
         top_NOG=config.top_genes_per_factor,
         rps_rpl_mt_genes_included=config.include_rps_rpl_mt_genes,
-        organism=config.organism,
+        organism=config.organism.capitalize(),
         correlation_with_spearman=config.correlation_with_spearman,
         positively_correlated=config.positively_correlated,
         saveas=config.saveas,
@@ -366,7 +367,7 @@ def plot_top_genes_all_factors(
         choose_celltypes=list(config.choose_celltypes),
         top_NOG=config.top_genes_per_factor,
         rps_rpl_mt_genes_included=config.include_rps_rpl_mt_genes,
-        organism=config.organism,
+        organism=config.organism.capitalize(),
         correlation_with_spearman=config.correlation_with_spearman,
         saveas=config.saveas,
         transparent_mode=config.transparent,
@@ -396,7 +397,7 @@ def plot_top_genes_pair(
         visualize_factors_id=list(factor_ids),
         top_NOG=config.top_genes_per_factor,
         dpi=config.dpi,
-        organism=config.organism,
+        organism=config.organism.capitalize(),
         rps_rpl_mt_genes_included=config.include_rps_rpl_mt_genes,
         correlation_with_spearman=config.correlation_with_spearman,
         saveas=config.saveas,
@@ -426,6 +427,29 @@ def plot_feature_matrix(
     return result.covariation_dir / f"Feature_matrix_PC.{config.saveas}"
 
 
+def _adapt_nico_pathway_analysis(pathway_analysis):
+    """Rebind only the pathway function's GSEApy enrichment to lowercase organisms."""
+
+    original_gseapy = pathway_analysis.__globals__["gseapy"]
+    original_enrichr = original_gseapy.enrichr
+
+    def enrichr(*args, organism, **kwargs):
+        return original_enrichr(*args, organism=organism.lower(), **kwargs)
+
+    private_gseapy = SimpleNamespace(**vars(original_gseapy))
+    private_gseapy.enrichr = enrichr
+    private_globals = {**pathway_analysis.__globals__, "gseapy": private_gseapy}
+    adapted = FunctionType(
+        pathway_analysis.__code__,
+        private_globals,
+        pathway_analysis.__name__,
+        pathway_analysis.__defaults__,
+        pathway_analysis.__closure__,
+    )
+    adapted.__kwdefaults__ = pathway_analysis.__kwdefaults__
+    return adapted
+
+
 def run_pathway_enrichment(
     result: CovariationResult,
     *,
@@ -438,7 +462,9 @@ def run_pathway_enrichment(
     state = require_nico_covariation_state(result)
     output_dir = result.covariation_dir / "Pathway_figures"
     before = _snapshot(output_dir, config.saveas)
-    scov.pathway_analysis(
+    # NiCo 1.8.0 needs title case for gene filtering; GSEApy 1.3.1 needs lowercase.
+    pathway_analysis = _adapt_nico_pathway_analysis(scov.pathway_analysis)
+    pathway_analysis(
         state,
         NOG_pathway=config.pathway_top_genes,
         choose_factors_id=list(config.choose_factors_id),
@@ -448,7 +474,7 @@ def run_pathway_enrichment(
         positively_correlated=config.positively_correlated,
         rps_rpl_mt_genes_included=config.include_rps_rpl_mt_genes,
         choose_celltypes=list(config.choose_celltypes),
-        organism=config.organism,
+        organism=config.organism.capitalize(),
         database=list(config.pathway_databases),
         display_plot_as=config.pathway_plot_as,
         showit=config.show,

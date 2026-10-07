@@ -529,6 +529,8 @@ summary = summarize_niche_result(load_niche_result("nico_analysis"))
 
 # 4. Covariation analysis
 
+For optional reports, `CovariationReportConfig.organism` accepts only lowercase `"mouse"` (the default) or `"human"`. The wrapper translates casing internally to preserve NiCo's gene filtering and support GSEApy enrichment.
+
 ## `run_covariation`
 
 Fully qualified import:

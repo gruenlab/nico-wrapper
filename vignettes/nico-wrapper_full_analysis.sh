@@ -268,7 +268,7 @@ uv run nico-wrapper covariation pathway \
   --factor-id $CC_FACTOR_ID \
   --top-genes 50 \
   --database "GO_Biological_Process_2021" \
-  --organism Mouse \
+  --organism mouse \
   --plot-as dotplot \
   --plot-format png
 
@@ -279,6 +279,6 @@ uv run nico-wrapper covariation pathway \
   --factor-id $CC_FACTOR_ID \
   --top-genes 50 \
   --database "GO_Biological_Process_2021" \
-  --organism Mouse \
+  --organism mouse \
   --plot-as barplot \
   --plot-format png

@@ -71,7 +71,7 @@ class CovariationReportConfig:
     correlation_with_spearman: bool = True
     positively_correlated: bool = True
     include_rps_rpl_mt_genes: bool = True
-    organism: Literal["Mouse", "Human"] = "Mouse"
+    organism: Literal["mouse", "human"] = "mouse"
 
     ligand_factor_threshold: float = 0.2
     receptor_factor_threshold: float = 0.2
@@ -86,3 +86,9 @@ class CovariationReportConfig:
     )
     pathway_top_genes: int = 50
     pathway_plot_as: Literal["barplot", "dotplot"] = "barplot"
+
+    def __post_init__(self) -> None:
+        if self.organism not in ("mouse", "human"):
+            raise ValueError(
+                f"organism must be 'mouse' or 'human' (lowercase); got {self.organism!r}."
+            )

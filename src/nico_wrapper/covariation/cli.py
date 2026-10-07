@@ -327,24 +327,24 @@ def pathway(
     factor_id: Annotated[Optional[list[int]], typer.Option("--factor-id", help="Restrict to selected factors. May be repeated.")] = None,
     top_genes: Annotated[int, typer.Option("--top-genes", help="Top genes per factor for enrichment.")] = 50,
     database: Annotated[Optional[list[str]], typer.Option("--database", help="Enrichr database. May be repeated.")] = None,
-    organism: Annotated[str, typer.Option("--organism", help="Mouse or Human.")] = "Mouse",
+    organism: Annotated[str, typer.Option("--organism", help="mouse or human (lowercase).")] = "mouse",
     plot_as: Annotated[str, typer.Option("--plot-as", help="barplot or dotplot.")] = "barplot",
     plot_format: Annotated[str, typer.Option("--plot-format", help="Plot file format.")] = "pdf",
     show: Annotated[bool, typer.Option("--show/--no-show", help="Keep figures open.")] = False,
 ) -> None:
     """Run optional pathway enrichment. May require network access to Enrichr."""
 
-    config = CovariationReportConfig(
-        saveas=plot_format,
-        show=show,
-        choose_celltypes=tuple(cell_type or ()),
-        choose_factors_id=tuple(factor_id or ()),
-        pathway_top_genes=top_genes,
-        pathway_databases=tuple(database) if database else CovariationReportConfig().pathway_databases,
-        organism=organism,  # type: ignore[arg-type]
-        pathway_plot_as=plot_as,  # type: ignore[arg-type]
-    )
     try:
+        config = CovariationReportConfig(
+            saveas=plot_format,
+            show=show,
+            choose_celltypes=tuple(cell_type or ()),
+            choose_factors_id=tuple(factor_id or ()),
+            pathway_top_genes=top_genes,
+            pathway_databases=tuple(database) if database else CovariationReportConfig().pathway_databases,
+            organism=organism,  # type: ignore[arg-type]
+            pathway_plot_as=plot_as,  # type: ignore[arg-type]
+        )
         result = load_covariation_result(output_dir, radius=radius, n_factors=n_factors, load_state=True)
         for path in run_pathway_enrichment(result, config=config):
             typer.echo(f"pathway_figure: {path}")
