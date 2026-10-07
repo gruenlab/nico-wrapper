@@ -2,9 +2,15 @@
 
 ## 1.1.1 (unreleased)
 
+### Added
+
+- Expose `--include-rps-rpl-mt-genes / --exclude-rps-rpl-mt-genes` in the covariation `pathway`, `top-genes`, and `reports` commands. Inclusion remains the default. Exclusion removes species-specific ribosomal/mitochondrial symbol prefixes before top-gene selection and pathway enrichment; model fitting is unchanged. In report bundles, only `top-genes-all-factors` and `pathway` are affected, and neither is in the default bundle.
+- Add `--organism` to covariation `top-genes` and `reports`, accepting lowercase `mouse` (default) or `human`. Invalid organisms fail before loading artifacts or generating reports.
+
 ### Fixed
 
 - Accept lowercase `mouse` (default) and `human` organism inputs in covariation reports and the pathway CLI. Add a wrapper-local GSEApy adapter that fixes pathway enrichment casing while preserving NiCo's species-specific gene filtering.
+- Preserve the selected organism, gene inclusion flag, and other report settings in `top-genes --all-factors` instead of recreating the configuration.
 
 ## 1.1.0
 

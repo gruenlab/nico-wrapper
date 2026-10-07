@@ -529,7 +529,39 @@ summary = summarize_niche_result(load_niche_result("nico_analysis"))
 
 # 4. Covariation analysis
 
-For optional reports, `CovariationReportConfig.organism` accepts only lowercase `"mouse"` (the default) or `"human"`. The wrapper translates casing internally to preserve NiCo's gene filtering and support GSEApy enrichment.
+## `CovariationReportConfig`: report-only gene filtering
+
+```python
+from nico_wrapper.covariation.config import CovariationReportConfig
+```
+
+These existing fields control candidate genes in top-gene reports and pathway enrichment:
+
+| Field | Default | Description |
+|---|---|---|
+| `include_rps_rpl_mt_genes` | `True` | Retain ribosomal/mitochondrial gene symbols. Set to `False` to exclude species-specific prefixes before selecting the top N genes. |
+| `organism` | `"mouse"` | Accepts only lowercase `"mouse"` or `"human"`. Selects the symbol prefixes and the organism for enrichment. |
+
+Exclusion removes symbols beginning with `Rps`, `Rpl`, or `mt-` for mouse, and `RPS`, `RPL`, or `MT-` for human. Matching is case-sensitive; excluded genes are replaced by the next-ranked eligible genes. Ensembl IDs do not match these prefixes. The wrapper translates casing internally for NiCo's filtering and GSEApy enrichment.
+
+The settings apply to `extract_top_genes`, `extract_top_genes_all_factors`, `plot_top_genes_all_factors`, `plot_top_genes_pair`, and `run_pathway_enrichment`. In `generate_covariation_reports`, only the `top-genes-all-factors` and `pathway` kinds consume them; neither is in the default bundle.
+
+### Example: reuse fitted results with human gene exclusion
+
+```python
+from nico_wrapper.covariation import load_covariation_result
+from nico_wrapper.covariation.config import CovariationReportConfig
+from nico_wrapper.covariation.reports import run_pathway_enrichment
+
+result = load_covariation_result("nico_analysis", load_state=True)
+config = CovariationReportConfig(
+    include_rps_rpl_mt_genes=False,
+    organism="human",
+)
+figures = run_pathway_enrichment(result, config=config)
+```
+
+Pathway enrichment may require network access to Enrichr. Exclusion changes report gene selection, not normalization, NMF/iNMF factors, gene–factor correlations, or ridge regression. Existing fitted results can be reused; rerun only the affected reports. Preventing these genes from influencing factorization would require separate input/model-level filtering.
 
 ## `run_covariation`
 

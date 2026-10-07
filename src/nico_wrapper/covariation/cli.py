@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -200,6 +201,8 @@ def reports(
     radius: Annotated[str, typer.Option("--radius", help="Radius tag/value.")] = "0",
     n_factors: Annotated[int, typer.Option("--n-factors", help="Number of latent factors.")] = 3,
     kind: Annotated[Optional[list[str]], typer.Option("--kind", help="Report kind. May be repeated.")] = None,
+    include_rps_rpl_mt_genes: Annotated[bool, typer.Option("--include-rps-rpl-mt-genes/--exclude-rps-rpl-mt-genes", help="Exclusion filters only top-genes-all-factors and pathway reports, not model fitting.")] = True,
+    organism: Annotated[str, typer.Option("--organism", help="mouse or human (lowercase).")] = "mouse",
     plot_format: Annotated[str, typer.Option("--plot-format", help="Plot file format.")] = "pdf",
     dpi: Annotated[int, typer.Option("--dpi", help="Plot DPI.")] = 300,
     show: Annotated[bool, typer.Option("--show/--no-show", help="Keep figures open.")] = False,
@@ -210,17 +213,19 @@ def reports(
 ) -> None:
     """Generate optional reports from an existing covariation result."""
 
-    config = CovariationReportConfig(
-        kinds=tuple(kind) if kind else CovariationReportConfig().kinds,
-        saveas=plot_format,
-        dpi=dpi,
-        show=show,
-        transparent=transparent,
-        pvalue_cutoff=pvalue_cutoff,
-        choose_celltypes=tuple(cell_type or ()),
-        choose_factors_id=tuple(factor_id or ()),
-    )
     try:
+        config = CovariationReportConfig(
+            kinds=tuple(kind) if kind else CovariationReportConfig().kinds,
+            include_rps_rpl_mt_genes=include_rps_rpl_mt_genes,
+            organism=organism,  # type: ignore[arg-type]
+            saveas=plot_format,
+            dpi=dpi,
+            show=show,
+            transparent=transparent,
+            pvalue_cutoff=pvalue_cutoff,
+            choose_celltypes=tuple(cell_type or ()),
+            choose_factors_id=tuple(factor_id or ()),
+        )
         result = load_covariation_result(output_dir, radius=radius, n_factors=n_factors, load_state=True)
         outputs = generate_covariation_reports(result, config=config)
     except (ValidationError, ValueError) as exc:
@@ -237,6 +242,8 @@ def top_genes(
     radius: Annotated[str, typer.Option("--radius", help="Radius tag/value.")] = "0",
     n_factors: Annotated[int, typer.Option("--n-factors", help="Number of latent factors.")] = 3,
     top_n: Annotated[int, typer.Option("--top-n", help="Number of genes to export/plot.")] = 30,
+    include_rps_rpl_mt_genes: Annotated[bool, typer.Option("--include-rps-rpl-mt-genes/--exclude-rps-rpl-mt-genes", help="Exclusion filters top-gene selection and pathway enrichment, not model fitting.")] = True,
+    organism: Annotated[str, typer.Option("--organism", help="mouse or human (lowercase).")] = "mouse",
     output: Annotated[Optional[Path], typer.Option("--output", help="Output TSV path.")] = None,
     plot_format: Annotated[str, typer.Option("--plot-format", help="Plot file format.")] = "pdf",
     positive: Annotated[bool, typer.Option("--positive/--negative", help="Use positive or negative factor correlations.")] = True,
@@ -247,13 +254,15 @@ def top_genes(
 ) -> None:
     """Extract top genes for one cell type/factor."""
 
-    config = CovariationReportConfig(
-        saveas=plot_format,
-        show=show,
-        top_genes_per_factor=top_n,
-        positively_correlated=positive,
-    )
     try:
+        config = CovariationReportConfig(
+            saveas=plot_format,
+            show=show,
+            top_genes_per_factor=top_n,
+            positively_correlated=positive,
+            include_rps_rpl_mt_genes=include_rps_rpl_mt_genes,
+            organism=organism,  # type: ignore[arg-type]
+        )
         result = load_covariation_result(output_dir, radius=radius, n_factors=n_factors, load_state=True)
         if pair_cell_type is not None:
             if factor_id is None or pair_factor_id is None:
@@ -266,13 +275,7 @@ def top_genes(
             ):
                 typer.echo(f"top_genes_plot: {path}")
         elif all_factors:
-            config = CovariationReportConfig(
-                saveas=plot_format,
-                show=show,
-                top_genes_per_factor=top_n,
-                positively_correlated=positive,
-                choose_celltypes=(cell_type,),
-            )
+            config = replace(config, choose_celltypes=(cell_type,))
             for path in plot_top_genes_all_factors(result, config=config):
                 typer.echo(f"top_genes_plot: {path}")
         else:
@@ -328,6 +331,7 @@ def pathway(
     top_genes: Annotated[int, typer.Option("--top-genes", help="Top genes per factor for enrichment.")] = 50,
     database: Annotated[Optional[list[str]], typer.Option("--database", help="Enrichr database. May be repeated.")] = None,
     organism: Annotated[str, typer.Option("--organism", help="mouse or human (lowercase).")] = "mouse",
+    include_rps_rpl_mt_genes: Annotated[bool, typer.Option("--include-rps-rpl-mt-genes/--exclude-rps-rpl-mt-genes", help="Exclusion filters top-gene selection and pathway enrichment, not model fitting.")] = True,
     plot_as: Annotated[str, typer.Option("--plot-as", help="barplot or dotplot.")] = "barplot",
     plot_format: Annotated[str, typer.Option("--plot-format", help="Plot file format.")] = "pdf",
     show: Annotated[bool, typer.Option("--show/--no-show", help="Keep figures open.")] = False,
@@ -342,6 +346,7 @@ def pathway(
             choose_factors_id=tuple(factor_id or ()),
             pathway_top_genes=top_genes,
             pathway_databases=tuple(database) if database else CovariationReportConfig().pathway_databases,
+            include_rps_rpl_mt_genes=include_rps_rpl_mt_genes,
             organism=organism,  # type: ignore[arg-type]
             pathway_plot_as=plot_as,  # type: ignore[arg-type]
         )

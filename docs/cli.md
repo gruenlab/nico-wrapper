@@ -476,6 +476,19 @@ uv run nico-niche proximity --output-dir nico_analysis
 
 `nico-covariation` runs NiCo latent-factor covariation after niche analysis and provides focused export/report commands. The core analysis is `run`; report commands operate on existing covariation artifacts.
 
+## Report-only gene filtering
+
+The `top-genes`, `pathway`, and `reports` commands include ribosomal/mitochondrial gene symbols by default (`--include-rps-rpl-mt-genes`). Use `--exclude-rps-rpl-mt-genes` to remove candidate symbols with these exact, case-sensitive prefixes:
+
+| `--organism` | Excluded prefixes |
+|---|---|
+| `mouse` (default) | `Rps`, `Rpl`, `mt-` |
+| `human` | `RPS`, `RPL`, `MT-` |
+
+Set `--organism` to match your gene symbols. NiCo filters previously computed gene–factor associations before selecting the top N genes, replacing excluded genes with the next-ranked eligible genes. This applies to single-factor, all-factor, and paired top-gene outputs, and to gene lists submitted to Enrichr for pathway enrichment.
+
+Filtering does not change normalization, NMF/iNMF factors, gene–factor correlations, or ridge regression. Reuse existing fitted results and rerun only the affected reports. This is symbol-prefix filtering: Ensembl IDs do not match these prefixes, and it does not exclude all genes involved in mitochondrial biology.
+
 ## `nico-covariation run`
 
 Runs core covariation analysis.
@@ -605,6 +618,8 @@ uv run nico-covariation export --output-dir nico_analysis
 
 Generates optional report bundles from an existing covariation result.
 
+Gene exclusion affects only the `top-genes-all-factors` and `pathway` report kinds, not every output in a bundle. The default bundle contains neither affected kind.
+
 ### Parameters
 
 | Parameter | Required | Default | Description |
@@ -613,6 +628,8 @@ Generates optional report bundles from an existing covariation result.
 | `--radius` | no | `0` | Radius tag/value. |
 | `--n-factors` | no | `3` | Number of latent factors. |
 | `--kind` | no | report defaults | Report kind. May be repeated. |
+| `--include-rps-rpl-mt-genes / --exclude-rps-rpl-mt-genes` | no | include | Retain or exclude ribosomal/mitochondrial symbols in `top-genes-all-factors` and `pathway` only. |
+| `--organism` | no | `mouse` | `mouse` or `human` (lowercase); selects species-specific symbol prefixes. |
 | `--plot-format` | no | `pdf` | Plot file format. |
 | `--dpi` | no | `300` | Plot DPI. |
 | `--show / --no-show` | no | no show | Keep figures open. |
@@ -625,6 +642,16 @@ Generates optional report bundles from an existing covariation result.
 
 ```bash
 uv run nico-covariation reports --output-dir nico_analysis
+```
+
+To exclude matching mouse symbols from all-factor top-gene reports:
+
+```bash
+uv run nico-covariation reports \
+  --output-dir nico_analysis \
+  --kind top-genes-all-factors \
+  --organism mouse \
+  --exclude-rps-rpl-mt-genes
 ```
 
 ## `nico-covariation top-genes`
@@ -641,6 +668,8 @@ Extracts or plots top genes for a cell type/factor.
 | `--radius` | no | `0` | Radius tag/value. |
 | `--n-factors` | no | `3` | Number of latent factors. |
 | `--top-n` | no | `30` | Number of genes to export/plot. |
+| `--include-rps-rpl-mt-genes / --exclude-rps-rpl-mt-genes` | no | include | Retain or exclude ribosomal/mitochondrial symbols before top-gene selection. |
+| `--organism` | no | `mouse` | `mouse` or `human` (lowercase); selects species-specific symbol prefixes. |
 | `--output` | no | default path | Output TSV path. |
 | `--plot-format` | no | `pdf` | Plot file format. |
 | `--positive / --negative` | no | positive | Use positive or negative factor correlations. |
@@ -657,6 +686,19 @@ uv run nico-covariation top-genes \
   --cell-type APCs \
   --factor-id 1
 ```
+
+For human symbols, using the umbrella entry point:
+
+```bash
+uv run nico-wrapper covariation top-genes \
+  --output-dir nico_analysis \
+  --cell-type APCs \
+  --factor-id 1 \
+  --organism human \
+  --exclude-rps-rpl-mt-genes
+```
+
+The same species and inclusion options apply with `--all-factors` or `--pair-cell-type`/`--pair-factor-id`.
 
 ## `nico-covariation lr`
 
@@ -701,6 +743,7 @@ Runs optional pathway enrichment from covariation factors. This may require Enri
 | `--top-genes` | no | `50` | Top genes per factor for enrichment. |
 | `--database` | no | GO/BioPlanet/Reactome defaults | Enrichr database. May be repeated. |
 | `--organism` | no | `mouse` | `mouse` or `human` (lowercase). |
+| `--include-rps-rpl-mt-genes / --exclude-rps-rpl-mt-genes` | no | include | Retain or exclude ribosomal/mitochondrial symbols before selecting genes for enrichment. |
 | `--plot-as` | no | `barplot` | `barplot` or `dotplot`. |
 | `--plot-format` | no | `pdf` | Plot file format. |
 | `--show / --no-show` | no | no show | Keep figures open. |
@@ -712,6 +755,15 @@ uv run nico-covariation pathway \
   --output-dir nico_analysis \
   --cell-type APCs \
   --factor-id 1
+```
+
+To exclude matching human symbols from enrichment gene lists:
+
+```bash
+uv run nico-covariation pathway \
+  --output-dir nico_analysis \
+  --organism human \
+  --exclude-rps-rpl-mt-genes
 ```
 
 ## `nico-covariation umap`

@@ -1,4 +1,4 @@
-"""Public organism contract and NiCo report-call assembly regressions."""
+"""Report CLI settings, public organism contract, and NiCo call assembly."""
 
 from dataclasses import FrozenInstanceError, asdict
 import json
@@ -38,53 +38,140 @@ class OrganismConfigTests(unittest.TestCase):
                 )
 
 
-class PathwayCliTests(unittest.TestCase):
+class ReportCliTests(unittest.TestCase):
+    cases = (
+        ("pathway", (), "run_pathway_enrichment"),
+        ("reports", (), "generate_covariation_reports"),
+        ("top-genes", ("--cell-type", "Cell A", "--factor-id", "2"), "extract_top_genes"),
+        ("top-genes", ("--cell-type", "Cell A", "--all-factors"), "plot_top_genes_all_factors"),
+        (
+            "top-genes",
+            ("--cell-type", "Cell A", "--factor-id", "2", "--pair-cell-type", "Cell B", "--pair-factor-id", "1"),
+            "plot_top_genes_pair",
+        ),
+    )
+
     def setUp(self):
         self.runner = CliRunner()
+        self.load = self.enterContext(patch.object(cli, "load_covariation_result", return_value=sentinel.result))
+        self.calls = self.enterContext(patch.multiple(
+            cli,
+            extract_top_genes=DEFAULT,
+            plot_top_genes_all_factors=DEFAULT,
+            plot_top_genes_pair=DEFAULT,
+            run_pathway_enrichment=DEFAULT,
+            generate_covariation_reports=DEFAULT,
+        ))
+        table = pd.DataFrame({"gene": ["UnchangedGene"]})
+        table.attrs["output_path"] = "genes.tsv"
+        self.calls["extract_top_genes"].return_value = table
+        for target in ("plot_top_genes_all_factors", "plot_top_genes_pair", "run_pathway_enrichment"):
+            self.calls[target].return_value = (Path("figure.png"),)
+        self.calls["generate_covariation_reports"].return_value = CovariationReportOutputs()
 
-    def test_default_and_explicit_organisms_are_forwarded_lowercase(self):
-        for options, organism in (([], "mouse"), (["--organism", "mouse"], "mouse"), (["--organism", "human"], "human")):
-            with self.subTest(options=options), patch.object(
-                cli, "load_covariation_result", return_value=sentinel.result
-            ) as load, patch.object(cli, "run_pathway_enrichment", return_value=(Path("figure.png"),)) as run:
-                result = self.runner.invoke(cli.app, ["pathway", "--output-dir", "existing-output", *options])
-                self.assertEqual(result.exit_code, 0, result.output)
-                load.assert_called_once_with(Path("existing-output"), radius="0", n_factors=3, load_state=True)
-                run.assert_called_once()
-                self.assertIs(run.call_args.args[0], sentinel.result)
-                config = run.call_args.kwargs["config"]
-                self.assertIsInstance(config, CovariationReportConfig)
-                self.assertEqual(config.organism, organism)
-                self.assertIn("pathway_figure: figure.png", result.output)
+    def invoke_report(self, command, options, target):
+        self.load.reset_mock()
+        for call in self.calls.values():
+            call.reset_mock()
+        result = self.runner.invoke(cli.app, [command, "--output-dir", "existing-output", *options])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.load.assert_called_once_with(Path("existing-output"), radius="0", n_factors=3, load_state=True)
+        for name, call in self.calls.items():
+            if name != target:
+                call.assert_not_called()
+        call = self.calls[target]
+        call.assert_called_once()
+        self.assertIs(call.call_args.args[0], sentinel.result)
+        config = call.call_args.kwargs["config"]
+        self.assertIsInstance(config, CovariationReportConfig)
+        if command == "pathway":
+            self.assertIn("pathway_figure: figure.png", result.output)
+        return config
 
-    def test_invalid_input_fails_before_loading_or_enrichment(self):
-        for organism in ("Mouse", "Human", "zebrafish"):
-            with self.subTest(organism=organism), patch.object(
-                cli, "load_covariation_result"
-            ) as load, patch.object(cli, "run_pathway_enrichment") as run:
-                result = self.runner.invoke(
-                    cli.app, ["pathway", "--output-dir", "missing-output", "--organism", organism]
-                )
-                self.assertEqual(result.exit_code, 1, result.output)
-                self.assertIn(
-                    f"pathway error: organism must be 'mouse' or 'human' (lowercase); got {organism!r}.",
-                    result.output,
-                )
-                load.assert_not_called()
-                run.assert_not_called()
+    def test_inclusion_and_mouse_remain_defaults_for_every_report_path(self):
+        for command, options, target in self.cases:
+            with self.subTest(command=command, target=target):
+                config = self.invoke_report(command, options, target)
+                self.assertIs(config.include_rps_rpl_mt_genes, True)
+                self.assertEqual(config.organism, "mouse")
+                if command == "reports":
+                    self.assertEqual(config.kinds, CovariationReportConfig().kinds)
+                    self.assertNotIn("top-genes-all-factors", config.kinds)
+                    self.assertNotIn("pathway", config.kinds)
 
-    def test_standalone_and_umbrella_help_show_lowercase_values_and_default(self):
+    def test_explicit_inclusion_exclusion_and_species_reach_every_report_path(self):
+        for command, options, target in self.cases:
+            for organism in ("mouse", "human"):
+                for flag, include in (("--include-rps-rpl-mt-genes", True), ("--exclude-rps-rpl-mt-genes", False)):
+                    with self.subTest(command=command, target=target, organism=organism, include=include):
+                        selected = (*options, "--organism", organism, flag)
+                        if command == "reports":
+                            selected = (*selected, "--kind", "top-genes-all-factors", "--kind", "pathway")
+                        config = self.invoke_report(command, selected, target)
+                        self.assertIs(config.include_rps_rpl_mt_genes, include)
+                        self.assertEqual(config.organism, organism)
+                        if command == "reports":
+                            self.assertEqual(config.kinds, ("top-genes-all-factors", "pathway"))
+
+    def test_all_top_gene_paths_preserve_other_settings_and_selections(self):
+        for command, options, target in self.cases:
+            if command != "top-genes":
+                continue
+            with self.subTest(target=target):
+                config = self.invoke_report(command, (
+                    *options, "--organism", "human", "--exclude-rps-rpl-mt-genes",
+                    "--top-n", "7", "--plot-format", "png", "--negative", "--show",
+                ), target)
+                self.assertEqual(config, CovariationReportConfig(
+                    organism="human", include_rps_rpl_mt_genes=False,
+                    top_genes_per_factor=7, saveas="png", positively_correlated=False, show=True,
+                    choose_celltypes=("Cell A",) if target == "plot_top_genes_all_factors" else (),
+                ))
+                kwargs = self.calls[target].call_args.kwargs
+                if target == "extract_top_genes":
+                    self.assertEqual(kwargs["cell_type"], "Cell A")
+                    self.assertEqual(kwargs["factor_id"], 2)
+                elif target == "plot_top_genes_pair":
+                    self.assertEqual(kwargs["celltype_pair"], ("Cell A", "Cell B"))
+                    self.assertEqual(kwargs["factor_ids"], (2, 1))
+
+    def test_invalid_organisms_fail_before_loading_or_report_execution(self):
+        for command, options, target in self.cases[:3]:
+            for organism in ("Mouse", "Human", "zebrafish"):
+                with self.subTest(command=command, organism=organism):
+                    result = self.runner.invoke(cli.app, [
+                        command, "--output-dir", "missing-output", *options, "--organism", organism,
+                    ])
+                    self.assertEqual(result.exit_code, 1, result.output)
+                    error_prefix = "report" if command == "reports" else command
+                    self.assertIn(
+                        f"{error_prefix} error: organism must be 'mouse' or 'human' (lowercase); got {organism!r}.",
+                        result.output,
+                    )
+                    self.load.assert_not_called()
+                    for call in self.calls.values():
+                        call.assert_not_called()
+
+    def test_standalone_and_umbrella_help_expose_options_defaults_and_scope(self):
         from nico_wrapper.cli import app as umbrella_app
 
-        for app, command in ((cli.app, ["pathway"]), (umbrella_app, ["covariation", "pathway"])):
-            with self.subTest(command=command):
-                result = self.runner.invoke(
-                    app, [*command, "--help"], color=False, env={"COLUMNS": "160", "TERM": "dumb", "NO_COLOR": "1"}
-                )
-                self.assertEqual(result.exit_code, 0, result.output)
-                organism_line = next(line for line in result.output.splitlines() if "--organism" in line)
-                self.assertIn("mouse or human (lowercase)", organism_line)
-                self.assertIn("[default: mouse]", organism_line)
+        for command in ("pathway", "top-genes", "reports"):
+            for app, prefix in ((cli.app, ()), (umbrella_app, ("covariation",))):
+                with self.subTest(command=command, prefix=prefix):
+                    result = self.runner.invoke(
+                        app, [*prefix, command, "--help"], color=False,
+                        env={"COLUMNS": "240", "TERM": "dumb", "NO_COLOR": "1"},
+                    )
+                    self.assertEqual(result.exit_code, 0, result.output)
+                    organism_line = next(line for line in result.output.splitlines() if "--organism" in line)
+                    self.assertIn("mouse or human (lowercase)", organism_line)
+                    self.assertIn("[default: mouse]", organism_line)
+                    filter_line = next(line for line in result.output.splitlines() if "--include-rps-rpl-mt-genes" in line)
+                    self.assertIn("--exclude-rps-rpl-mt-genes", filter_line)
+                    self.assertIn("[default: include-rps-rpl-mt-genes]", filter_line)
+                    self.assertIn("not model fitting", filter_line)
+                    if command == "reports":
+                        self.assertIn("only top-genes-all-factors and pathway reports", filter_line)
 
 
 class ReportBoundaryTests(unittest.TestCase):

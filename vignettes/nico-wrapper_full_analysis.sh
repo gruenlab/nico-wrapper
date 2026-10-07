@@ -123,9 +123,12 @@ uv run nico-wrapper covariation reports \
   --dpi 300
 
 # 5d. Top genes across all factors as dot plots for Paneth and Stem/TA
+# Exclude mouse Rps/Rpl/mt- symbols before top-gene selection; model fitting is unchanged.
 uv run nico-wrapper covariation reports \
   --output-dir nico_analysis \
   --kind top-genes-all-factors \
+  --organism mouse \
+  --exclude-rps-rpl-mt-genes \
   --cell-type "Paneth" \
   --cell-type "Stem/TA" \
   --plot-format png \
