@@ -30,10 +30,11 @@ When you need methodological details, cite or consult NiCo. When you need a stru
 - [Installation](https://github.com/gruenlab/nico-wrapper/blob/main/docs/install.md)
 - [CLI usage](https://github.com/gruenlab/nico-wrapper/blob/main/docs/cli.md)
 - [Python API](https://github.com/gruenlab/nico-wrapper/blob/main/docs/api.md)
+- [Changelog](https://github.com/gruenlab/nico-wrapper/blob/main/CHANGELOG.md)
 
 ## Installation
 
-Version 1.0.0 supports Python 3.12 on Linux and macOS.
+Version 1.1.0 supports Python 3.12 on Linux and macOS.
 
 ### 1. Install uv
 

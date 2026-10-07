@@ -1,6 +1,6 @@
 # Installation
 
-Version 1.0.0 supports Python 3.12 on Linux and macOS.
+Version 1.1.0 supports Python 3.12 on Linux and macOS.
 
 ## Install `uv`
 
