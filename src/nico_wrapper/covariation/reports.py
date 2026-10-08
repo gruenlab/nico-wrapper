@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import asdict, is_dataclass, replace
 from datetime import datetime, timezone
-import json
 from pathlib import Path
-import re
 from types import FunctionType, SimpleNamespace
 from typing import Any, Literal
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import seaborn as sns
 
 from .config import CovariationReportConfig
 from .io import read_covariation_state
@@ -406,6 +409,42 @@ def plot_top_genes_pair(
     )
     return _created_or_existing(output_dir, config.saveas, before)
 
+def plot_feature_matrices_base_nico(
+    input: Any,
+    showit: bool,
+    saveas: str,
+    transparent_mode: bool,
+    dpi: int,
+    figsize: tuple[int, int]=(10, 10),
+):
+    ylabelname = []
+    for i in range(len(input.spatialcell_unique_clustername)):
+        for j in range(input.no_of_pc):
+            ylabelname.append(
+                input.spatialcell_unique_clustername[i] + "_" + "Fa" + str(j + 1)
+            )
+
+    data1 = np.load(input.outputname, allow_pickle=True)
+    data = data1["weighted_neighborhood_of_factors_in_niche"]
+    fig, _ = plt.subplots(1, 1, figsize=figsize)
+    Feature = data[:, (input.no_of_pc) : data.shape[1]]
+    index = np.argsort(input.annotation_spatial_cluster_id)
+    sns.heatmap(np.log10(Feature[index, :]), xticklabels=ylabelname)
+    print(
+        "The figures are saved: ",
+        input.covariation_dir + "Feature_matrix_PC" + "." + saveas,
+    )
+    fig.savefig(
+        input.covariation_dir + "Feature_matrix_PC" + "." + saveas,
+        bbox_inches="tight",
+        transparent=transparent_mode,
+        dpi=dpi,
+    )
+    if showit:
+        pass
+    else:
+        plt.close("all")
+
 
 def plot_feature_matrix(
     result: CovariationResult,
@@ -417,7 +456,7 @@ def plot_feature_matrix(
     from nico import Covariations as scov
 
     state = require_nico_covariation_state(result)
-    scov.plot_feature_matrices(
+    plot_feature_matrices_base_nico(
         state,
         showit=config.show,
         saveas=config.saveas,
